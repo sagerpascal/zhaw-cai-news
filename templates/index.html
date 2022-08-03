@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static',filename='styles/base.css') }}">
+    <title>ZHAW CAI NEWS</title>
+</head>
+<body>
+
+<div id="top-bar">
+    <img src="{{ url_for('static',filename='images/logo.jpg') }}" alt="ZHAW Logo">
+    <div id="top-bar-text">
+        CAI News
+    </div>
+</div>
+
+<div class="content">
+    <h1 id="news-title">
+        {{ title }}
+    </h1>
+
+    <h3 id="news-lead">
+        {{ lead }}
+    </h3>
+
+    <div id="news-date">
+        {{ datetime }}
+    </div>
+
+    <img id="news-img" src="{{ image_url }}" alt="">
+
+    <div id="news-paragraphs">
+        {{ paragraphs | safe }}
+    </div>
+</div>
+
+</body>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+<script>
+    var count = 1
+    var update_time = 1000 * 10;
+
+    function updateNews() {
+        $.getJSON('/next_news/' + count, function (response) {
+            $("#news-title").text(response.title);
+            $("#news-lead").text(response.lead);
+            $("#news-date").text(response.datetime);
+            $("#news-paragraphs").html(response.paragraphs);
+            $("#news-img").attr("src", response.image_url);
+            count += 1;
+        })
+        $(".content").scrollTo(0, 0);
+    }
+
+    function pageScrollDown() {
+        $(".content").scrollBy({top: window.innerHeight, left: 0, behavior: 'smooth'});
+    }
+
+    setInterval('updateNews()', update_time);
+    setInterval('pageScrollDown()', update_time * 0.5);
+</script>
+
+
+</html>
