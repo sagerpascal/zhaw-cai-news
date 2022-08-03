@@ -47,8 +47,18 @@ h3 {
 
 #news-img {
     float: right;
-    vertical-align: middle;
     padding: 20px;
+    height: 25%;
+    width: 25%;
+    display:block;
+}
+
+#footer {
+    color: #8a8a8a;
+    font-size: small;
+    text-align: center !important;
+    padding: 10px;
+    width: 100%;
 }
 
 a {

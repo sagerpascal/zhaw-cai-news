@@ -42,14 +42,13 @@ class NewsSpider(scrapy.Spider):
             'datetime': ' '.join(response.css(".datetime>time::text").get().replace("\n", "").split()),
             # 'paragraphs': response.css(".clearfix>p").getall(),
             'paragraphs': response.css(".news .clearfix>p, .news .clearfix>ul").getall(),
-            'image_url': "https://www.zhaw.ch" + response.css(".news-img-wrap img").get().split('srcset=')[1].split(" ")[0].replace("\"", ""),
+            'image_url': "https://www.zhaw.ch" + response.css(".news-img-wrap img").get().split('src=')[1].split('\"')[1],
         }
         self.news_.append(result)
 
 
 def merge_paragraphs(paragraphs):
     result = ' '.join(paragraphs)
-    print(result)
     return result
 
 @app.route('/crawl')

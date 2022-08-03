@@ -34,12 +34,17 @@
     </div>
 </div>
 
+<div id="footer">
+    Copyright © 2022 Zurich University of Applied Sciences, Centre for Artificial Intelligence
+</div>
+
 </body>
 
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
 <script>
     var count = 1
     var update_time = 1000 * 10;
+    var scrolled = false;
 
     function updateNews() {
         $.getJSON('/next_news/' + count, function (response) {
@@ -50,15 +55,23 @@
             $("#news-img").attr("src", response.image_url);
             count += 1;
         })
-        $(".content").scrollTo(0, 0);
     }
 
-    function pageScrollDown() {
-        $(".content").scrollBy({top: window.innerHeight, left: 0, behavior: 'smooth'});
+    function pageUpdate() {
+        if (!scrolled) {
+            window.scrollTo({
+                top: window.document.body.clientHeight,
+                behavior: 'smooth'
+            });
+            scrolled = true;
+        } else {
+            updateNews();
+            $(window).scrollTop(0);
+            scrolled = false;
+        }
     }
 
-    setInterval('updateNews()', update_time);
-    setInterval('pageScrollDown()', update_time * 0.5);
+    setInterval('pageUpdate()', update_time * 0.5);
 </script>
 
 
