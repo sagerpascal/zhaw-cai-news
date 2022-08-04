@@ -9,9 +9,7 @@
 
 <div id="top-bar">
     <img src="{{ url_for('static',filename='images/logo.jpg') }}" alt="ZHAW Logo">
-    <div id="top-bar-text">
-        CAI News
-    </div>
+    <div id="top-bar-text">CAI News       </div>
 </div>
 
 <div class="content">
@@ -43,7 +41,7 @@
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
 <script>
     var count = 1
-    var update_time = 1000 * 10;
+    var update_time = 1000 * 60 * 3;  // update rate: 3min.
     var scrolled = false;
 
     function updateNews() {
