@@ -4,17 +4,20 @@ import crochet
 
 crochet.setup()
 
-import random
 import threading
 from flask import Flask
 from flask import render_template
 import scrapy
 from scrapy.crawler import CrawlerRunner
+from flask import send_from_directory
+from pathlib import Path
 
 # CODE FROM https://github.com/notoriousno/scrapy-flask
 
 
 app = Flask(__name__)
+app.secret_key = "HU71GHjh87zggjh7H867DF564d"
+
 crawl_runner = CrawlerRunner()
 news = []
 scrape_in_progress = False
@@ -42,7 +45,8 @@ class NewsSpider(scrapy.Spider):
             'datetime': ' '.join(response.css(".datetime>time::text").get().replace("\n", "").split()),
             # 'paragraphs': response.css(".clearfix>p").getall(),
             'paragraphs': response.css(".news .clearfix>p, .news .clearfix>ul").getall(),
-            'image_url': "https://www.zhaw.ch" + response.css(".news-img-wrap img").get().split('src=')[1].split('\"')[1],
+            'image_url': "https://www.zhaw.ch" + response.css(".news-img-wrap img").get().split('src=')[1].split('\"')[
+                1],
         }
         self.news_.append(result)
 
@@ -50,6 +54,12 @@ class NewsSpider(scrapy.Spider):
 def merge_paragraphs(paragraphs):
     result = ' '.join(paragraphs)
     return result
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(Path('static') / "images", "favicon.ico", mimetype='image/vnd.microsoft.icon')
+
 
 @app.route('/crawl')
 def crawl_for_quotes():
@@ -106,10 +116,9 @@ def periodic_update():
     threading.Timer(3600, periodic_update).start()  # update content every hour
 
 
-if __name__ == 'app':
-    periodic_update()
+periodic_update()
+while not scrape_complete:
+    time.sleep(5)
 
-    while not scrape_complete:
-        time.sleep(5)
-
-    app.run('0.0.0.0', 6000)
+if __name__ == '__main__':
+    app.run('0.0.0.0', 5000)

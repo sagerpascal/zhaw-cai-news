@@ -3,49 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" type="text/css" href="{{ url_for('static',filename='styles/base.css') }}">
-    <title>ZHAW CAI NEWS</title>
+    <title>Centre for Artificial Intelligence: News</title>
 </head>
 <body>
 
-<div id="top-bar">
-    <img src="{{ url_for('static',filename='images/logo.jpg') }}" alt="ZHAW Logo">
-    <div id="top-bar-text">CAI News       </div>
+<div id="div_video">
+    <video id="video" width="100%" height="100%" controls>
+        <source src="{{ url_for('static',filename='videos/CAI-Video-Subtitles.mp4') }}" id="mov" type="video/mp4">
+        <source src="{{ url_for('static',filename='videos/CAI-Video-Subtitles.mov') }}" id="mov" type="video/mov">
+        Your browser does not support the video tag.
+    </video>
 </div>
 
-<div class="content">
-    <h1 id="news-title">
-        {{ title }}
-    </h1>
-
-    <h3 id="news-lead">
-        {{ lead }}
-    </h3>
-
-    <div id="news-date">
-        {{ datetime }}
+<div id="container">
+    <div id="top-bar">
+        <div id="top-bar-text">{{ title }}</div>
+        <div id="top-bar-img-div">
+            <img id="top-bar-img" src="{{ url_for('static',filename='images/logo.png') }}" alt="ZHAW Logo">
+        </div>
     </div>
 
-    <img id="news-img" src="{{ image_url }}" alt="">
+    <div class="content">
+        {#    <h1 id="news-title">#}
+        {#        {{ title }}#}
+        {#    </h1>#}
 
-    <div id="news-paragraphs">
-        {{ paragraphs | safe }}
+        <hr>
+
+        <h3 id="news-lead">
+            {{ lead }}
+        </h3>
+
+        <div id="news-date">
+            {{ datetime }}
+        </div>
+
+        <img id="news-img" src="{{ image_url }}" alt="">
+
+        <div id="news-paragraphs">
+            {{ paragraphs | safe }}
+        </div>
     </div>
-</div>
 
-<div id="footer">
-    Copyright © 2022 Zurich University of Applied Sciences, Centre for Artificial Intelligence
+    <div id="footer">
+        Copyright © 2022 Zurich University of Applied Sciences, Centre for Artificial Intelligence
+    </div>
+
 </div>
 
 </body>
 
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
 <script>
-    var count = 1
-    var update_time = 1000 * 60 * 3;  // update rate: 3min.
-    var scrolled = false;
+    let count = 1
+    let video_interval = 1000 * 60 * 10;  // video every 10 minutes
+    let update_time = 1000 * 60;  // update rate of news: 1 minute
+    let scrolled = false;
+    let video_playing = false;
+    const enable_scrolling = true;
+    const enable_video = true;
 
     function updateNews() {
         $.getJSON('/next_news/' + count, function (response) {
+            $("#top-bar-text").text(response.title);
             $("#news-title").text(response.title);
             $("#news-lead").text(response.lead);
             $("#news-date").text(response.datetime);
@@ -55,21 +75,82 @@
         })
     }
 
+    function hideVideo(e) {
+        let videoDiv = document.getElementById("div_video");
+        let containerDiv = document.getElementById("container");
+        videoDiv.style.display = "none";
+        containerDiv.style.display = "block";
+        video_playing = false;
+        setTimeout(function () {
+            playVideo();
+        }, video_interval);
+        pageUpdate();
+    }
+
+    function playVideo() {
+        video_playing = true;
+        let videoDiv = document.getElementById("div_video");
+        let containerDiv = document.getElementById("container");
+        containerDiv.style.display = "none";
+        videoDiv.style.display = "block";
+        let video = document.getElementById('video');
+        video.load();
+        video.muted = true;
+        video.playsInline = true;
+
+        {#if (video.requestFullscreen)
+            video.requestFullscreen();
+        else if (video.webkitRequestFullscreen)
+            video.webkitRequestFullscreen();
+        else if (video.msRequestFullScreen)
+            video.msRequestFullScreen();
+
+        if (video.enterFullscreen)
+            video.enterFullscreen();
+        else if (video.webkitEnterFullscreen)
+            video.webkitEnterFullscreen();
+        else if (video.msEnterFullScreen)
+            video.msEnterFullScreen();#}
+
+        video.play();
+        video.addEventListener('ended', hideVideo, false);
+    }
+
     function pageUpdate() {
+        if (video_playing) {
+            return
+        }
         if (!scrolled) {
-            window.scrollTo({
-                top: window.document.body.clientHeight,
-                behavior: 'smooth'
-            });
+            if (enable_scrolling) {
+                window.scrollTo({
+                    top: window.document.body.clientHeight,
+                    behavior: 'smooth'
+                });
+            }
             scrolled = true;
         } else {
             updateNews();
             $(window).scrollTop(0);
             scrolled = false;
         }
+        setTimeout(function () {
+            pageUpdate();
+        }, update_time * 0.5);
     }
 
-    setInterval('pageUpdate()', update_time * 0.5);
+    hideVideo();
+
+    // Don't use interval since function take quite long to execute
+    setTimeout(function () {
+        pageUpdate();
+    }, update_time * 0.5);
+
+    if (enable_video) {
+        setTimeout(function () {
+            playVideo();
+        }, video_interval);
+    }
+
 </script>
 
 

@@ -1,7 +1,6 @@
 html, body {
     font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
     color: #333;
-    margin: 0 100px;
 }
 
 h1, h3 {
@@ -14,10 +13,21 @@ h1 {
     font-weight: bolder;
 }
 
+hr {
+    border: none;
+    height: 1px;
+    color: #aaa9a9;
+    background-color: #aaa9a9;
+}
+
 h3 {
     color: #8a8a8a;
     font-size: 1.5rem;
     font-weight: bold;
+}
+
+#container {
+    margin: 0 100px;
 }
 
 #news-date {
@@ -26,24 +36,27 @@ h3 {
 }
 
 #top-bar {
-    background-color: #0164a7;
+    display: flex;
+    flex-wrap: wrap;
 }
 
-#top-bar img {
-    display: block;
+#top-bar-img-div {
+    flex-basis: 15%;
     margin: auto;
-    float: left;
+}
+
+#top-bar-img {
+    max-width: 100%;
 }
 
 #top-bar-text {
-    color: #ffffff;
-    width: 70%;
-    text-align: center !important;
+    flex-grow: 1;
+    flex-basis: 70%;
+    margin: auto;
+    color: #0164a7;
     font-size: 3rem;
     font-weight: bold;
     display: inline-block;
-    padding: 40px;
-    white-space: pre;
 }
 
 #news-img {
@@ -51,15 +64,18 @@ h3 {
     padding: 20px;
     height: 25%;
     width: 25%;
-    display:block;
+    display: block;
 }
 
 #footer {
     color: #8a8a8a;
     font-size: small;
     text-align: center !important;
-    padding: 10px;
+    padding: 10px 0;
     width: 100%;
+    position: fixed;
+    bottom: 0;
+    background-color: white;
 }
 
 a {
