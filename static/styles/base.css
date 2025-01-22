@@ -1,6 +1,7 @@
 html, body {
     font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
     color: #333;
+    height: 100%;
 }
 
 h1, h3 {
@@ -49,6 +50,13 @@ h3 {
     max-width: 100%;
 }
 
+#div_video {
+    margin: auto;
+    position: relative;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
 #top-bar-text {
     flex-grow: 1;
     flex-basis: 70%;
@@ -82,4 +90,34 @@ h3 {
 a {
     color: #0064a6;
     text-decoration: None;
+}
+
+@media (max-width: 1400px) {
+    .hidden-small {
+        display: none;
+    }
+
+    #news-lead {
+        width: 60%;
+        float: left;
+        text-align: left !important;
+    }
+
+    #news-img {
+        height: 35%;
+        width: 35%;
+    }
+
+    h3 {
+        font-size: 2rem;
+    }
+
+     body {
+        font-size: 1.3rem;
+    }
+}
+
+.background-black {
+    background-color: #000000;
+    color: white;
 }

@@ -2,13 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" type="text/css" href="{{ url_for('static',filename='styles/base.css') }}">
     <title>Centre for Artificial Intelligence: News</title>
 </head>
 <body>
 
 <div id="div_video">
-    <video id="video" width="100%" height="100%" controls>
+    <video id="video" width="100%" height="100%" controls autplay muted>
         <source src="{{ url_for('static',filename='videos/CAI-Video-Subtitles.mp4') }}" id="mov" type="video/mp4">
         <source src="{{ url_for('static',filename='videos/CAI-Video-Subtitles.mov') }}" id="mov" type="video/mov">
         Your browser does not support the video tag.
@@ -34,19 +36,19 @@
             {{ lead }}
         </h3>
 
-        <div id="news-date">
+        <div id="news-date" class="hidden-small">
             {{ datetime }}
         </div>
 
         <img id="news-img" src="{{ image_url }}" alt="">
 
-        <div id="news-paragraphs">
+        <div id="news-paragraphs" >
             {{ paragraphs | safe }}
         </div>
     </div>
 
     <div id="footer">
-        Copyright © 2022 Zurich University of Applied Sciences, Centre for Artificial Intelligence
+        Copyright © 2024 Zurich University of Applied Sciences, Centre for Artificial Intelligence (CAI)
     </div>
 
 </div>
@@ -55,13 +57,26 @@
 
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
 <script>
+
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register("/service-worker.js").then(function(registration) {
+          console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        }, function(err) {
+          console.log('ServiceWorker registration failed: ', err);
+        });
+      });
+    }
+
+
     let count = 1
     let video_interval = 1000 * 60 * 10;  // video every 10 minutes
-    let update_time = 1000 * 60;  // update rate of news: 1 minute
+    let update_time = 1000 * 20;  // update rate of news: 20 sec.
     let scrolled = false;
     let video_playing = false;
-    const enable_scrolling = true;
-    const enable_video = true;
+    const enable_scrolling = false;
+    const enable_video = false;
 
     function updateNews() {
         $.getJSON('/next_news/' + count, function (response) {
@@ -76,18 +91,22 @@
     }
 
     function hideVideo(e) {
+        $('body').removeClass('background-black');
         let videoDiv = document.getElementById("div_video");
         let containerDiv = document.getElementById("container");
         videoDiv.style.display = "none";
         containerDiv.style.display = "block";
         video_playing = false;
-        setTimeout(function () {
-            playVideo();
-        }, video_interval);
+        if (enable_video) {
+            setTimeout(function () {
+                playVideo();
+            }, video_interval);
+        }
         pageUpdate();
     }
 
     function playVideo() {
+        $('body').addClass('background-black');
         video_playing = true;
         let videoDiv = document.getElementById("div_video");
         let containerDiv = document.getElementById("container");

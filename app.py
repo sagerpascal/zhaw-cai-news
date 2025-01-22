@@ -5,7 +5,7 @@ import crochet
 crochet.setup()
 
 import threading
-from flask import Flask
+from flask import Flask, send_file
 from flask import render_template
 import scrapy
 from scrapy.crawler import CrawlerRunner
@@ -56,6 +56,16 @@ def merge_paragraphs(paragraphs):
     return result
 
 
+@app.route('/manifest.json')
+def serve_manifest():
+    return send_file('manifest.json', mimetype='application/manifest+json')
+
+
+@app.route('/service-worker.js')
+def serve_service_worker():
+    return send_file('service-worker.js', mimetype='application/javascript')
+
+
 @app.route('/favicon.ico')
 def favicon():
     return send_from_directory(Path('static') / "images", "favicon.ico", mimetype='image/vnd.microsoft.icon')
@@ -88,7 +98,7 @@ def finished_scrape(null):
 
 
 @app.route('/')
-def hello_world():
+def main():
     global scrape_complete
     if scrape_complete:
         selected_news = news[0]
