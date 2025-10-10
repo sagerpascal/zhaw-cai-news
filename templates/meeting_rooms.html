@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0072bc">
+    <title>Meeting Rooms - ZHAW CAI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #fff;
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1400px;
+            margin: 0 auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            background-color: rgb(0, 100, 166);
+            width: 100%;
+            padding: 20px 40px;
+            box-sizing: border-box;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        h1 {
+            font-family: 'Helvetica Rounded', 'Arial Rounded MT Bold', sans-serif;
+            font-weight: 400;
+            color: white;
+            font-size: 2.2rem;
+            margin: 0;
+        }
+        
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border: 2px solid white;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        
+        .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        main {
+            padding: 40px;
+            flex: 1;
+        }
+        
+        .rooms-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .room-card {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .room-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #0072bc;
+        }
+        
+        .room-name {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: #0072bc;
+            margin: 0;
+        }
+        
+        .room-status {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .status-free {
+            background-color: #4caf50;
+            color: white;
+        }
+        
+        .status-busy {
+            background-color: #f44336;
+            color: white;
+        }
+        
+        .current-time {
+            text-align: center;
+            font-size: 1.1rem;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .timeline {
+            position: relative;
+            margin-top: 20px;
+        }
+        
+        .time-slot {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 4px;
+            background-color: #f5f5f5;
+        }
+        
+        .event-slot {
+            background-color: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+        
+        .time-label {
+            font-weight: 600;
+            min-width: 120px;
+            color: #333;
+        }
+        
+        .event-details {
+            flex: 1;
+        }
+        
+        .event-subject {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .event-organizer {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #f44336;
+        }
+        
+        footer {
+            background-color: #f0f0f0;
+            padding: 15px 40px;
+            color: #666;
+            margin-top: auto;
+            text-align: center;
+        }
+        
+        @media (max-width: 1024px) {
+            .rooms-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Meeting Room Availability</h1>
+            <a href="/" class="nav-link">Back to News</a>
+        </header>
+        
+        <main>
+            <div class="current-time" id="current-time"></div>
+            
+            <div class="rooms-container">
+                <div class="room-card" id="room1-card">
+                    <div class="room-header">
+                        <h2 class="room-name">{{ room1_name }}</h2>
+                        <span class="room-status" id="room1-status">Loading...</span>
+                    </div>
+                    <div class="timeline" id="room1-timeline">
+                        <div class="loading">Loading calendar...</div>
+                    </div>
+                </div>
+                
+                <div class="room-card" id="room2-card">
+                    <div class="room-header">
+                        <h2 class="room-name">{{ room2_name }}</h2>
+                        <span class="room-status" id="room2-status">Loading...</span>
+                    </div>
+                    <div class="timeline" id="room2-timeline">
+                        <div class="loading">Loading calendar...</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>© ZHAW Center for Artificial Intelligence</p>
+        </footer>
+    </div>
+
+    <script>
+        function updateCurrentTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+            });
+            const dateString = now.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            document.getElementById('current-time').textContent = `${dateString} - ${timeString}`;
+        }
+        
+        function isCurrentlyBusy(events) {
+            const now = new Date();
+            return events.some(event => {
+                const start = new Date(event.start);
+                const end = new Date(event.end);
+                return now >= start && now <= end;
+            });
+        }
+        
+        function formatTime(dateTimeString) {
+            const date = new Date(dateTimeString);
+            return date.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+            });
+        }
+        
+        function renderTimeline(roomId, events) {
+            const timeline = document.getElementById(`${roomId}-timeline`);
+            const status = document.getElementById(`${roomId}-status`);
+            
+            if (events.length === 0) {
+                timeline.innerHTML = '<div class="time-slot"><div>No meetings scheduled today</div></div>';
+                status.textContent = 'Free All Day';
+                status.className = 'room-status status-free';
+                return;
+            }
+            
+            const busy = isCurrentlyBusy(events);
+            status.textContent = busy ? 'Busy' : 'Free';
+            status.className = `room-status ${busy ? 'status-busy' : 'status-free'}`;
+            
+            let html = '';
+            events.forEach(event => {
+                const startTime = formatTime(event.start);
+                const endTime = formatTime(event.end);
+                
+                html += `
+                    <div class="time-slot event-slot">
+                        <div class="time-label">${startTime} - ${endTime}</div>
+                        <div class="event-details">
+                            <div class="event-subject">${event.subject}</div>
+                            <div class="event-organizer">Organized by ${event.organizer}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            timeline.innerHTML = html;
+        }
+        
+        function loadRoomCalendar(roomId) {
+            fetch(`/api/room-calendar/${roomId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById(`${roomId}-timeline`).innerHTML = 
+                            `<div class="error">${data.error}</div>`;
+                        return;
+                    }
+                    renderTimeline(roomId, data.events);
+                })
+                .catch(error => {
+                    console.error(`Error loading ${roomId}:`, error);
+                    document.getElementById(`${roomId}-timeline`).innerHTML = 
+                        '<div class="error">Failed to load calendar</div>';
+                });
+        }
+        
+        function refreshAll() {
+            updateCurrentTime();
+            loadRoomCalendar('room1');
+            loadRoomCalendar('room2');
+        }
+        
+        // Initial load
+        refreshAll();
+        
+        // Update every minute
+        setInterval(refreshAll, 60000);
+        
+        // Update time display every second
+        setInterval(updateCurrentTime, 1000);
+    </script>
+</body>
+</html>

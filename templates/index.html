@@ -31,6 +31,11 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            {% if show_rooms %}
+            padding-bottom: calc(20vh + 8px + 46px); /* Space for meeting rooms + progress bar + footer */
+            {% else %}
+            padding-bottom: calc(8px + 46px); /* Space for progress bar + footer */
+            {% endif %}
         }
         
         header {
@@ -47,6 +52,7 @@
         main {
             padding: 40px;
             flex: 1;
+            overflow-y: auto;
         }
         
         .news-item {
@@ -120,10 +126,157 @@
         }
         
         footer {
+            position: fixed;
+            bottom: 8px; /* Above progress bar */
+            left: 0;
+            right: 0;
             background-color: #f0f0f0;
             padding: 15px 40px;
             color: #666;
-            margin-top: auto;
+            text-align: center;
+            z-index: 999;
+        }
+        
+        /* Meeting rooms section */
+        .meeting-rooms-section {
+            position: fixed;
+            bottom: calc(8px + 46px); /* Above progress bar and footer */
+            left: 0;
+            right: 0;
+            background-color: #f9f9f9;
+            border-top: 2px solid #0072bc;
+            padding: 20px 40px;
+            height: 20vh;
+            min-height: 200px;
+            max-height: 20vh;
+            overflow: hidden; /* No scrolling */
+            box-sizing: border-box;
+        }
+        
+        .rooms-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        .room-card {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 15px;
+            overflow: hidden; /* No scrolling, truncate content */
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .room-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #0072bc;
+            flex-shrink: 0; /* Header doesn't shrink */
+        }
+        
+        .room-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #0072bc;
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .room-status {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+        
+        .status-free {
+            background-color: #4caf50;
+            color: white;
+        }
+        
+        .status-busy {
+            background-color: #f44336;
+            color: white;
+        }
+        
+        .timeline {
+            position: relative;
+            flex: 1;
+            overflow: hidden; /* Hide overflow, no scrolling */
+        }
+        
+        .time-slot {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 6px;
+            border-radius: 3px;
+            background-color: #f5f5f5;
+            font-size: 0.85rem;
+            overflow: hidden;
+        }
+        
+        .event-slot {
+            background-color: #ffebee;
+            border-left: 3px solid #f44336;
+        }
+        
+        .time-label {
+            font-weight: 600;
+            min-width: 100px;
+            color: #333;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+        
+        .event-details {
+            flex: 1;
+            overflow: hidden;
+            min-width: 0; /* Allow text truncation */
+        }
+        
+        .event-subject {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 2px;
+            font-size: 0.85rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .event-organizer {
+            font-size: 0.75rem;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 20px;
+            color: #f44336;
+            font-size: 0.9rem;
         }
         
         /* Additional responsive styles */
@@ -138,6 +291,10 @@
             h2 {
                 font-size: 2rem;
             }
+            
+            .rooms-container {
+                grid-template-columns: 1fr;
+            }
         }
         
         /* Progress bar for auto-scroll */
@@ -148,6 +305,7 @@
             position: fixed;
             bottom: 0;
             left: 0;
+            z-index: 1000;
         }
         
         .progress-bar {
@@ -184,14 +342,40 @@
             </article>
         </main>
         
-        <footer>
-            <p>© ZHAW Center for Artificial Intelligence</p>
-        </footer>
-        
-        <!-- Progress bar for auto-scroll visualization -->
-        <div class="progress-container">
-            <div class="progress-bar" id="progress-bar"></div>
+        {% if show_rooms %}
+        <div class="meeting-rooms-section">
+            <div class="rooms-container">
+                <div class="room-card" id="room1-card">
+                    <div class="room-header">
+                        <h3 class="room-name">{{ room1_name }}</h3>
+                        <span class="room-status" id="room1-status">Loading...</span>
+                    </div>
+                    <div class="timeline" id="room1-timeline">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+                
+                <div class="room-card" id="room2-card">
+                    <div class="room-header">
+                        <h3 class="room-name">{{ room2_name }}</h3>
+                        <span class="room-status" id="room2-status">Loading...</span>
+                    </div>
+                    <div class="timeline" id="room2-timeline">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
         </div>
+        {% endif %}
+    </div>
+    
+    <footer>
+        <p>© ZHAW Centre for Artificial Intelligence</p>
+    </footer>
+    
+    <!-- Progress bar for auto-scroll visualization -->
+    <div class="progress-container">
+        <div class="progress-bar" id="progress-bar"></div>
     </div>
 
     <script>
@@ -200,6 +384,7 @@
         let autoScrollInterval = 20000; // 20 seconds
         let startTime;
         let timerId;
+        const showRooms = {{ 'true' if show_rooms else 'false' }};
         
         function loadNews(newsId) {
             fetch(`/next_news/${newsId}`)
@@ -246,9 +431,93 @@
             }, autoScrollInterval);
         }
         
+        // Meeting rooms functions
+        function isCurrentlyBusy(events) {
+            const now = new Date();
+            return events.some(event => {
+                const start = new Date(event.start);
+                const end = new Date(event.end);
+                return now >= start && now <= end;
+            });
+        }
+        
+        function formatTime(dateTimeString) {
+            const date = new Date(dateTimeString);
+            return date.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+            });
+        }
+        
+        function renderTimeline(roomId, events) {
+            const timeline = document.getElementById(`${roomId}-timeline`);
+            const status = document.getElementById(`${roomId}-status`);
+            
+            if (events.length === 0) {
+                timeline.innerHTML = '<div class="time-slot">No meetings today</div>';
+                status.textContent = 'Free';
+                status.className = 'room-status status-free';
+                return;
+            }
+            
+            const busy = isCurrentlyBusy(events);
+            status.textContent = busy ? 'Busy' : 'Free';
+            status.className = `room-status ${busy ? 'status-busy' : 'status-free'}`;
+            
+            let html = '';
+            events.forEach(event => {
+                const startTime = formatTime(event.start);
+                const endTime = formatTime(event.end);
+                
+                html += `
+                    <div class="time-slot event-slot">
+                        <div class="time-label">${startTime} - ${endTime}</div>
+                        <div class="event-details">
+                            <div class="event-subject">${event.subject}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            timeline.innerHTML = html;
+        }
+        
+        function loadRoomCalendar(roomId) {
+            fetch(`/api/room-calendar/${roomId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById(`${roomId}-timeline`).innerHTML = 
+                            `<div class="error">${data.error}</div>`;
+                        return;
+                    }
+                    renderTimeline(roomId, data.events);
+                })
+                .catch(error => {
+                    console.error(`Error loading ${roomId}:`, error);
+                    document.getElementById(`${roomId}-timeline`).innerHTML = 
+                        '<div class="error">Failed to load</div>';
+                });
+        }
+        
+        function refreshRooms() {
+            if (showRooms) {
+                loadRoomCalendar('room1');
+                loadRoomCalendar('room2');
+            }
+        }
+        
         // Start auto-scroll when page loads
         window.addEventListener('load', function() {
             resetAutoScroll();
+            
+            // Load meeting rooms if enabled
+            if (showRooms) {
+                refreshRooms();
+                // Refresh room calendars every minute
+                setInterval(refreshRooms, 60000);
+            }
             
             // Register service worker for PWA support
             if ('serviceWorker' in navigator) {

@@ -16,10 +16,12 @@ import crochet
 crochet.setup()
 
 # Then import Flask and other libraries
-from flask import Flask, send_file, render_template, send_from_directory, jsonify
+from flask import Flask, send_file, render_template, send_from_directory, jsonify, request
 import scrapy
 from scrapy.crawler import CrawlerRunner
 from alternative_scraper import AlternativeScraper
+import requests
+from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(
@@ -331,6 +333,9 @@ def handle_scrape_error(failure):
 
 @app.route('/')
 def main():
+    # Check if meeting rooms should be displayed via URL parameter
+    show_rooms = request.args.get('rooms', 'false').lower() == 'true'
+    
     if news_manager.is_empty():
         if not news_manager.scrape_in_progress:
             # Start a scrape if none is in progress and we have no news
@@ -349,7 +354,10 @@ def main():
                                       lead=news_manager.news[0]['lead'],
                                       image_url=news_manager.news[0]['image_url'],
                                       news_id=0,
-                                      total_news=1)
+                                      total_news=1,
+                                      show_rooms=show_rooms,
+                                      room1_name=os.environ.get('ROOM1_NAME', 'Meeting Room 1'),
+                                      room2_name=os.environ.get('ROOM2_NAME', 'Meeting Room 2'))
         return render_template('loading.html', message="Loading news, please wait...")
     
     # Display the first news item
@@ -362,7 +370,10 @@ def main():
                           lead=selected_news['lead'],
                           image_url=selected_news['image_url'],
                           news_id=0,
-                          total_news=len(news_manager.news))
+                          total_news=len(news_manager.news),
+                          show_rooms=show_rooms,
+                          room1_name=os.environ.get('ROOM1_NAME', 'Meeting Room 1'),
+                          room2_name=os.environ.get('ROOM2_NAME', 'Meeting Room 2'))
 
 
 @app.route('/next_news/<int:news_id>')
@@ -407,6 +418,101 @@ def alternative_scrape():
         news_manager.reset_state()
         news_manager.add_dummy_news()
         return jsonify(status="Error in alternative scrape, added dummy news", error=str(e))
+
+
+# Microsoft Graph API configuration
+GRAPH_API_ENDPOINT = 'https://graph.microsoft.com/v1.0'
+# These should be stored in environment variables in production
+CLIENT_ID = os.environ.get('AZURE_CLIENT_ID', '')
+CLIENT_SECRET = os.environ.get('AZURE_CLIENT_SECRET', '')
+TENANT_ID = os.environ.get('AZURE_TENANT_ID', '')
+
+# Meeting room email addresses
+MEETING_ROOMS = {
+    'room1': os.environ.get('ROOM1_EMAIL', 'meetingroom1@yourdomain.com'),
+    'room2': os.environ.get('ROOM2_EMAIL', 'meetingroom2@yourdomain.com')
+}
+
+def get_access_token():
+    """Get access token for Microsoft Graph API"""
+    token_url = f'https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token'
+    token_data = {
+        'grant_type': 'client_credentials',
+        'client_id': CLIENT_ID,
+        'client_secret': CLIENT_SECRET,
+        'scope': 'https://graph.microsoft.com/.default'
+    }
+    
+    try:
+        response = requests.post(token_url, data=token_data)
+        response.raise_for_status()
+        return response.json().get('access_token')
+    except Exception as e:
+        logger.error(f"Error getting access token: {str(e)}")
+        return None
+
+def get_room_calendar(room_email, access_token):
+    """Fetch calendar events for a specific room for today"""
+    if not access_token:
+        return []
+    
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+    
+    # Get today's date range
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    
+    # Format dates for Graph API
+    start_datetime = today_start.strftime('%Y-%m-%dT%H:%M:%S')
+    end_datetime = today_end.strftime('%Y-%m-%dT%H:%M:%S')
+    
+    # Query calendar view
+    calendar_url = f"{GRAPH_API_ENDPOINT}/users/{room_email}/calendarView"
+    params = {
+        'startDateTime': start_datetime,
+        'endDateTime': end_datetime,
+        '$select': 'subject,start,end,organizer,isAllDay',
+        '$orderby': 'start/dateTime'
+    }
+    
+    try:
+        response = requests.get(calendar_url, headers=headers, params=params)
+        response.raise_for_status()
+        events = response.json().get('value', [])
+        
+        # Process events to simplify data
+        processed_events = []
+        for event in events:
+            processed_events.append({
+                'subject': event.get('subject', 'No Subject'),
+                'start': event['start']['dateTime'],
+                'end': event['end']['dateTime'],
+                'organizer': event.get('organizer', {}).get('emailAddress', {}).get('name', 'Unknown'),
+                'isAllDay': event.get('isAllDay', False)
+            })
+        
+        return processed_events
+    except Exception as e:
+        logger.error(f"Error fetching calendar for {room_email}: {str(e)}")
+        return []
+
+@app.route('/api/room-calendar/<room_id>')
+def get_room_calendar_api(room_id):
+    """API endpoint to fetch room calendar data"""
+    if room_id not in MEETING_ROOMS:
+        return jsonify(error="Invalid room ID"), 404
+    
+    room_email = MEETING_ROOMS[room_id]
+    access_token = get_access_token()
+    
+    if not access_token:
+        return jsonify(error="Failed to authenticate with Microsoft Graph API"), 500
+    
+    events = get_room_calendar(room_email, access_token)
+    return jsonify(events=events, room_email=room_email)
 
 
 def periodic_update():
