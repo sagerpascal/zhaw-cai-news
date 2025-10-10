@@ -84,7 +84,6 @@ class NewsSpider(scrapy.Spider):
         # Try the direct news listing URL instead
         urls = [
             f'{self.base_url}en/engineering/institutes-centres/cai/',  # Main CAI page
-            f'{self.base_url}en/about-us/news/',  # Main news page as fallback
         ]
         for url in urls:
             logger.info(f"Requesting page: {url}")
@@ -141,9 +140,11 @@ class NewsSpider(scrapy.Spider):
             if not datetime:
                 datetime = "No date available"  # Default value
                 
-            paragraphs = response.css(".news .clearfix>p, .news .clearfix>ul").getall()
+            # Updated selector based on the actual HTML structure
+            paragraphs = response.css(".news.news-single .article .frame-type-text p").getall()
             if not paragraphs:
-                paragraphs = response.css("div.clearfix p").getall()  # Fallback selector
+                # Try the old selectors as fallbacks
+                paragraphs = response.css(".news .clearfix>p, .news .clearfix>ul").getall()
                 
             img_tag = response.css(".news-img-wrap img").get()
             image_url = "https://www.zhaw.ch/static/images/default.jpg"  # Default image
