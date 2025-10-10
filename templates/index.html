@@ -16,6 +16,9 @@
             background-color: #fff;
             color: #333;
             overflow-x: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
         
         .container {
@@ -25,35 +28,41 @@
             padding: 0;
             box-shadow: none;
             background-color: #fff;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
         }
         
         header {
-            background-color: #0072bc;
-            color: white;
-            padding: 20px 40px;
-            margin: 0;
+            background-color: rgb(0, 100, 166);
             width: 100%;
+            padding: 20px 40px;
+            box-sizing: border-box;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         main {
             padding: 40px;
+            flex: 1;
         }
         
         .news-item {
-            display: flex;
-            flex-wrap: wrap;
+            max-width: 1200px;
+            margin: 0 auto;
         }
         
         .news-content {
-            width: 70%;
-            padding-right: 40px;
+            width: 100%;
         }
         
         .news-image {
+            float: right;
             width: 30%;
-            position: sticky;
-            top: 40px;
-            align-self: flex-start;
+            margin-left: 40px;
+            margin-bottom: 20px;
         }
         
         .news-image img {
@@ -62,21 +71,27 @@
         }
         
         h2 {
-            color: #0072bc;
-            font-size: 2.5rem;
-            margin-top: 0;
-            margin-bottom: 20px;
+            font-family: 'Helvetica Rounded', 'Arial Rounded MT Bold', sans-serif;
+            font-weight: 400;
+            color: white;
+            font-size: 2.8rem;
+            margin: 0;
             line-height: 1.2;
+            text-align: center;
         }
         
         .news-lead {
-            font-size: 1.3rem;
+            font-family: 'Helvetica Rounded', 'Arial Rounded MT Bold', sans-serif;
+            font-weight: 300;
+            color: rgb(138, 138, 138);
+            font-size: 1.2rem;
             line-height: 1.5;
             margin-bottom: 30px;
-            color: #333;
         }
         
         .news-body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: rgb(51, 51, 51);
             font-size: 1.1rem;
             line-height: 1.6;
         }
@@ -85,28 +100,43 @@
             margin-bottom: 20px;
         }
         
+        .news-body a {
+            color: inherit;
+            text-decoration: none;
+        }
+        
+        .news-lead a {
+            color: inherit;
+            text-decoration: none;
+        }
+        
         .news-meta {
             margin-bottom: 20px;
             color: #666;
+        }
+        
+        .news-text-content {
+            overflow: auto;
         }
         
         footer {
             background-color: #f0f0f0;
             padding: 15px 40px;
             color: #666;
+            margin-top: auto;
         }
         
         /* Additional responsive styles */
         @media (max-width: 768px) {
-            .news-content {
+            .news-image {
+                float: none;
                 width: 100%;
-                padding-right: 0;
+                margin-left: 0;
+                margin-bottom: 20px;
             }
             
-            .news-image {
-                width: 100%;
-                margin-top: 20px;
-                position: relative;
+            h2 {
+                font-size: 2rem;
             }
         }
         
@@ -130,25 +160,26 @@
 <body>
     <div class="container">
         <header>
-            <h1>ZHAW CAI News</h1>
+            <h2 id="news-title">{{ title }}</h2>
         </header>
         
         <main id="news-content">
             <article class="news-item">
                 <div class="news-content">
-                    <h2 id="news-title">{{ title }}</h2>
                     <div class="news-meta">
                         <span class="date" id="news-datetime">{{ datetime }}</span>
                     </div>
-                    <div class="news-lead">
-                        <p id="news-lead"><strong>{{ lead }}</strong></p>
+                    <div class="news-text-content">
+                        <div class="news-image">
+                            <img id="news-img" src="{{ image_url }}" alt="{{ title }}">
+                        </div>
+                        <div class="news-lead">
+                            <p id="news-lead"><strong>{{ lead }}</strong></p>
+                        </div>
+                        <div class="news-body" id="news-paragraphs">
+                            {{ paragraphs|safe }}
+                        </div>
                     </div>
-                    <div class="news-body" id="news-paragraphs">
-                        {{ paragraphs|safe }}
-                    </div>
-                </div>
-                <div class="news-image">
-                    <img id="news-img" src="{{ image_url }}" alt="{{ title }}">
                 </div>
             </article>
         </main>
