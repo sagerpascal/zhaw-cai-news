@@ -2,175 +2,230 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0072bc">
+    <title>ZHAW CAI News</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="manifest" href="/manifest.json">
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static',filename='styles/base.css') }}">
-    <title>Centre for Artificial Intelligence: News</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #fff;
+            color: #333;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            padding: 0;
+            box-shadow: none;
+            background-color: #fff;
+        }
+        
+        header {
+            background-color: #0072bc;
+            color: white;
+            padding: 20px 40px;
+            margin: 0;
+            width: 100%;
+        }
+        
+        main {
+            padding: 40px;
+        }
+        
+        .news-item {
+            display: flex;
+            flex-wrap: wrap;
+        }
+        
+        .news-content {
+            width: 70%;
+            padding-right: 40px;
+        }
+        
+        .news-image {
+            width: 30%;
+            position: sticky;
+            top: 40px;
+            align-self: flex-start;
+        }
+        
+        .news-image img {
+            width: 100%;
+            border-radius: 4px;
+        }
+        
+        h2 {
+            color: #0072bc;
+            font-size: 2.5rem;
+            margin-top: 0;
+            margin-bottom: 20px;
+            line-height: 1.2;
+        }
+        
+        .news-lead {
+            font-size: 1.3rem;
+            line-height: 1.5;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        
+        .news-body {
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+        
+        .news-body p, .news-body ul {
+            margin-bottom: 20px;
+        }
+        
+        .news-meta {
+            margin-bottom: 20px;
+            color: #666;
+        }
+        
+        footer {
+            background-color: #f0f0f0;
+            padding: 15px 40px;
+            color: #666;
+        }
+        
+        /* Additional responsive styles */
+        @media (max-width: 768px) {
+            .news-content {
+                width: 100%;
+                padding-right: 0;
+            }
+            
+            .news-image {
+                width: 100%;
+                margin-top: 20px;
+                position: relative;
+            }
+        }
+        
+        /* Progress bar for auto-scroll */
+        .progress-container {
+            width: 100%;
+            height: 8px;
+            background: #f0f0f0;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+        }
+        
+        .progress-bar {
+            height: 8px;
+            background: #0072bc;
+            width: 0%;
+        }
+    </style>
 </head>
 <body>
-
-<div id="div_video">
-    <video id="video" width="100%" height="100%" controls autplay muted>
-        <source src="{{ url_for('static',filename='videos/CAI-Video-Subtitles.mp4') }}" id="mov" type="video/mp4">
-        <source src="{{ url_for('static',filename='videos/CAI-Video-Subtitles.mov') }}" id="mov" type="video/mov">
-        Your browser does not support the video tag.
-    </video>
-</div>
-
-<div id="container">
-    <div id="top-bar">
-        <div id="top-bar-text">{{ title }}</div>
-        <div id="top-bar-img-div">
-            <img id="top-bar-img" src="{{ url_for('static',filename='images/logo.png') }}" alt="ZHAW Logo">
+    <div class="container">
+        <header>
+            <h1>ZHAW CAI News</h1>
+        </header>
+        
+        <main id="news-content">
+            <article class="news-item">
+                <div class="news-content">
+                    <h2 id="news-title">{{ title }}</h2>
+                    <div class="news-meta">
+                        <span class="date" id="news-datetime">{{ datetime }}</span>
+                    </div>
+                    <div class="news-lead">
+                        <p id="news-lead"><strong>{{ lead }}</strong></p>
+                    </div>
+                    <div class="news-body" id="news-paragraphs">
+                        {{ paragraphs|safe }}
+                    </div>
+                </div>
+                <div class="news-image">
+                    <img id="news-img" src="{{ image_url }}" alt="{{ title }}">
+                </div>
+            </article>
+        </main>
+        
+        <footer>
+            <p>© ZHAW Center for Artificial Intelligence</p>
+        </footer>
+        
+        <!-- Progress bar for auto-scroll visualization -->
+        <div class="progress-container">
+            <div class="progress-bar" id="progress-bar"></div>
         </div>
     </div>
 
-    <div class="content">
-        {#    <h1 id="news-title">#}
-        {#        {{ title }}#}
-        {#    </h1>#}
-
-        <hr>
-
-        <h3 id="news-lead">
-            {{ lead }}
-        </h3>
-
-        <div id="news-date" class="hidden-small">
-            {{ datetime }}
-        </div>
-
-        <img id="news-img" src="{{ image_url }}" alt="">
-
-        <div id="news-paragraphs" >
-            {{ paragraphs | safe }}
-        </div>
-    </div>
-
-    <div id="footer">
-        Copyright © 2024 Zurich University of Applied Sciences, Centre for Artificial Intelligence (CAI)
-    </div>
-
-</div>
-
-</body>
-
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
-<script>
-
-
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
-        navigator.serviceWorker.register("/service-worker.js").then(function(registration) {
-          console.log('ServiceWorker registration successful with scope: ', registration.scope);
-        }, function(err) {
-          console.log('ServiceWorker registration failed: ', err);
-        });
-      });
-    }
-
-
-    let count = 1
-    let video_interval = 1000 * 60 * 10;  // video every 10 minutes
-    let update_time = 1000 * 20;  // update rate of news: 20 sec.
-    let scrolled = false;
-    let video_playing = false;
-    const enable_scrolling = false;
-    const enable_video = false;
-
-    function updateNews() {
-        $.getJSON('/next_news/' + count, function (response) {
-            $("#top-bar-text").text(response.title);
-            $("#news-title").text(response.title);
-            $("#news-lead").text(response.lead);
-            $("#news-date").text(response.datetime);
-            $("#news-paragraphs").html(response.paragraphs);
-            $("#news-img").attr("src", response.image_url);
-            count += 1;
-        })
-    }
-
-    function hideVideo(e) {
-        $('body').removeClass('background-black');
-        let videoDiv = document.getElementById("div_video");
-        let containerDiv = document.getElementById("container");
-        videoDiv.style.display = "none";
-        containerDiv.style.display = "block";
-        video_playing = false;
-        if (enable_video) {
-            setTimeout(function () {
-                playVideo();
-            }, video_interval);
+    <script>
+        let currentNewsId = {{ news_id }};
+        let totalNews = {{ total_news }};
+        let autoScrollInterval = 20000; // 20 seconds
+        let startTime;
+        let timerId;
+        
+        function loadNews(newsId) {
+            fetch(`/next_news/${newsId}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('news-title').textContent = data.title;
+                    document.getElementById('news-datetime').textContent = data.datetime;
+                    document.getElementById('news-lead').innerHTML = `<strong>${data.lead}</strong>`;
+                    document.getElementById('news-paragraphs').innerHTML = data.paragraphs;
+                    document.getElementById('news-img').src = data.image_url;
+                    document.getElementById('news-img').alt = data.title;
+                    currentNewsId = data.news_id;
+                    totalNews = data.total_news;
+                    
+                    // Reset and restart the auto-scroll timer
+                    resetAutoScroll();
+                })
+                .catch(error => console.error('Error loading news:', error));
         }
-        pageUpdate();
-    }
-
-    function playVideo() {
-        $('body').addClass('background-black');
-        video_playing = true;
-        let videoDiv = document.getElementById("div_video");
-        let containerDiv = document.getElementById("container");
-        containerDiv.style.display = "none";
-        videoDiv.style.display = "block";
-        let video = document.getElementById('video');
-        video.load();
-        video.muted = true;
-        video.playsInline = true;
-
-        {#if (video.requestFullscreen)
-            video.requestFullscreen();
-        else if (video.webkitRequestFullscreen)
-            video.webkitRequestFullscreen();
-        else if (video.msRequestFullScreen)
-            video.msRequestFullScreen();
-
-        if (video.enterFullscreen)
-            video.enterFullscreen();
-        else if (video.webkitEnterFullscreen)
-            video.webkitEnterFullscreen();
-        else if (video.msEnterFullScreen)
-            video.msEnterFullScreen();#}
-
-        video.play();
-        video.addEventListener('ended', hideVideo, false);
-    }
-
-    function pageUpdate() {
-        if (video_playing) {
-            return
-        }
-        if (!scrolled) {
-            if (enable_scrolling) {
-                window.scrollTo({
-                    top: window.document.body.clientHeight,
-                    behavior: 'smooth'
-                });
+        
+        function updateProgressBar() {
+            const elapsedTime = Date.now() - startTime;
+            const progress = Math.min(elapsedTime / autoScrollInterval * 100, 100);
+            document.getElementById('progress-bar').style.width = progress + '%';
+            
+            if (elapsedTime < autoScrollInterval) {
+                requestAnimationFrame(updateProgressBar);
             }
-            scrolled = true;
-        } else {
-            updateNews();
-            $(window).scrollTop(0);
-            scrolled = false;
         }
-        setTimeout(function () {
-            pageUpdate();
-        }, update_time * 0.5);
-    }
-
-    hideVideo();
-
-    // Don't use interval since function take quite long to execute
-    setTimeout(function () {
-        pageUpdate();
-    }, update_time * 0.5);
-
-    if (enable_video) {
-        setTimeout(function () {
-            playVideo();
-        }, video_interval);
-    }
-
-</script>
-
-
+        
+        function resetAutoScroll() {
+            // Clear any existing timer
+            if (timerId) {
+                clearTimeout(timerId);
+            }
+            
+            // Reset progress bar
+            startTime = Date.now();
+            requestAnimationFrame(updateProgressBar);
+            
+            // Set new timer for auto-scroll
+            timerId = setTimeout(function() {
+                loadNews((currentNewsId + 1) % totalNews);
+            }, autoScrollInterval);
+        }
+        
+        // Start auto-scroll when page loads
+        window.addEventListener('load', function() {
+            resetAutoScroll();
+            
+            // Register service worker for PWA support
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(reg => console.log('Service worker registered'))
+                    .catch(err => console.log('Service worker registration failed:', err));
+            }
+        });
+    </script>
+</body>
 </html>

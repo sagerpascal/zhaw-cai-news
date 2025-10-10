@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0072bc">
+    <title>Loading - ZHAW CAI News</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <style>
+        .loader {
+            border: 16px solid #f3f3f3;
+            border-top: 16px solid #0072bc;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            animation: spin 1s linear infinite;
+            margin: 40px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-container {
+            text-align: center;
+            padding: 50px 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>ZHAW CAI News</h1>
+        </header>
+        
+        <main class="loading-container">
+            <div class="loader"></div>
+            <h2>{{ message }}</h2>
+            <p>We're fetching the latest news from ZHAW CAI...</p>
+        </main>
+        
+        <footer>
+            <p>© ZHAW Center for Artificial Intelligence</p>
+        </footer>
+    </div>
+    
+    <script>
+        // Auto refresh the page after 5 seconds to check if news is ready
+        setTimeout(() => {
+            window.location.href = "/";
+        }, 5000);
+    </script>
+</body>
+</html>
