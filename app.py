@@ -1,5 +1,9 @@
 # Make sure reactor selection happens before any other imports
 import os
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Set environment variable to use the correct reactor
 os.environ["SCRAPY_REACTOR"] = "twisted.internet.selectreactor.SelectReactor"
 
@@ -444,16 +448,23 @@ def get_access_token():
     }
     
     try:
+        logger.info(f"Requesting access token for tenant: {TENANT_ID}")
         response = requests.post(token_url, data=token_data)
         response.raise_for_status()
-        return response.json().get('access_token')
+        token = response.json().get('access_token')
+        logger.info("Successfully obtained access token")
+        return token
     except Exception as e:
         logger.error(f"Error getting access token: {str(e)}")
+        if hasattr(e, 'response') and e.response is not None:
+            logger.error(f"Response status: {e.response.status_code}")
+            logger.error(f"Response body: {e.response.text}")
         return None
 
 def get_room_calendar(room_email, access_token):
     """Fetch calendar events for a specific room for today"""
     if not access_token:
+        logger.error("No access token provided to get_room_calendar")
         return []
     
     headers = {
@@ -465,12 +476,20 @@ def get_room_calendar(room_email, access_token):
     today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
     
-    # Format dates for Graph API
-    start_datetime = today_start.strftime('%Y-%m-%dT%H:%M:%S')
-    end_datetime = today_end.strftime('%Y-%m-%dT%H:%M:%S')
+    # Format dates for Graph API - use UTC timezone format
+    start_datetime = today_start.isoformat() + 'Z'
+    end_datetime = today_end.isoformat() + 'Z'
     
-    # Query calendar view
-    calendar_url = f"{GRAPH_API_ENDPOINT}/users/{room_email}/calendarView"
+    logger.info(f"Fetching calendar for {room_email} from {start_datetime} to {end_datetime}")
+    
+    # Try multiple endpoints - rooms may need different access patterns
+    endpoints_to_try = [
+        # Method 1: Direct calendar access (requires Calendars.Read)
+        f"{GRAPH_API_ENDPOINT}/users/{room_email}/calendarView",
+        # Method 2: Schedule information (requires Calendars.Read or Schedule.Read.All)
+        f"{GRAPH_API_ENDPOINT}/users/{room_email}/calendar/calendarView",
+    ]
+    
     params = {
         'startDateTime': start_datetime,
         'endDateTime': end_datetime,
@@ -478,26 +497,83 @@ def get_room_calendar(room_email, access_token):
         '$orderby': 'start/dateTime'
     }
     
+    for endpoint in endpoints_to_try:
+        try:
+            logger.info(f"Trying endpoint: {endpoint}")
+            response = requests.get(endpoint, headers=headers, params=params)
+            logger.info(f"Graph API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                events = response.json().get('value', [])
+                logger.info(f"SUCCESS! Found {len(events)} events for {room_email}")
+                
+                # Process events to simplify data
+                processed_events = []
+                for event in events:
+                    processed_events.append({
+                        'subject': event.get('subject', 'No Subject'),
+                        'start': event['start']['dateTime'],
+                        'end': event['end']['dateTime'],
+                        'organizer': event.get('organizer', {}).get('emailAddress', {}).get('name', 'Unknown'),
+                        'isAllDay': event.get('isAllDay', False)
+                    })
+                
+                return processed_events
+            else:
+                logger.warning(f"Endpoint failed with status {response.status_code}: {response.text}")
+                
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP Error for {endpoint}: {str(e)}")
+            logger.error(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
+        except Exception as e:
+            logger.error(f"Error trying {endpoint}: {str(e)}")
+    
+    # If all methods fail, try getSchedule API as last resort
     try:
-        response = requests.get(calendar_url, headers=headers, params=params)
-        response.raise_for_status()
-        events = response.json().get('value', [])
+        logger.info("Trying getSchedule API as fallback")
+        schedule_url = f"{GRAPH_API_ENDPOINT}/users/{room_email}/calendar/getSchedule"
+        schedule_data = {
+            "schedules": [room_email],
+            "startTime": {
+                "dateTime": start_datetime,
+                "timeZone": "UTC"
+            },
+            "endTime": {
+                "dateTime": end_datetime,
+                "timeZone": "UTC"
+            }
+        }
         
-        # Process events to simplify data
-        processed_events = []
-        for event in events:
-            processed_events.append({
-                'subject': event.get('subject', 'No Subject'),
-                'start': event['start']['dateTime'],
-                'end': event['end']['dateTime'],
-                'organizer': event.get('organizer', {}).get('emailAddress', {}).get('name', 'Unknown'),
-                'isAllDay': event.get('isAllDay', False)
-            })
+        response = requests.post(schedule_url, headers=headers, json=schedule_data)
+        logger.info(f"getSchedule response status: {response.status_code}")
         
-        return processed_events
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"getSchedule result: {result}")
+            # Parse schedule response - structure is different
+            schedule_items = result.get('value', [{}])[0].get('scheduleItems', [])
+            
+            processed_events = []
+            for item in schedule_items:
+                if item.get('status') == 'busy':
+                    processed_events.append({
+                        'subject': item.get('subject', 'Busy'),
+                        'start': item['start']['dateTime'],
+                        'end': item['end']['dateTime'],
+                        'organizer': 'Unknown',
+                        'isAllDay': item.get('isAllDay', False)
+                    })
+            
+            logger.info(f"getSchedule found {len(processed_events)} events")
+            return processed_events
+        else:
+            logger.error(f"getSchedule failed: {response.text}")
+            
     except Exception as e:
-        logger.error(f"Error fetching calendar for {room_email}: {str(e)}")
-        return []
+        logger.error(f"Error with getSchedule API: {str(e)}")
+    
+    logger.error(f"All methods failed to fetch calendar for {room_email}")
+    return []
 
 @app.route('/api/room-calendar/<room_id>')
 def get_room_calendar_api(room_id):
@@ -506,14 +582,121 @@ def get_room_calendar_api(room_id):
         return jsonify(error="Invalid room ID"), 404
     
     room_email = MEETING_ROOMS[room_id]
+    logger.info(f"API request for room calendar: {room_id} ({room_email})")
     access_token = get_access_token()
     
     if not access_token:
+        logger.error("Failed to get access token")
         return jsonify(error="Failed to authenticate with Microsoft Graph API"), 500
     
     events = get_room_calendar(room_email, access_token)
+    logger.info(f"Returning {len(events)} events for {room_id}")
     return jsonify(events=events, room_email=room_email)
 
+
+@app.route('/api/test-graph-api')
+def test_graph_api():
+    """Debug endpoint to test Graph API connection and permissions"""
+    results = {
+        'tenant_id': TENANT_ID,
+        'client_id': CLIENT_ID,
+        'client_secret_set': bool(CLIENT_SECRET),
+        'rooms': MEETING_ROOMS,
+        'token_test': None,
+        'room_tests': {},
+        'permissions_needed': [
+            'Calendars.Read (Application)',
+            'OR Calendars.ReadWrite (Application)',
+            'OR Schedule.Read.All (Application)',
+            'Place.Read.All (Application) - if rooms are configured as Places'
+        ],
+        'admin_consent_granted': 'Please verify in Azure Portal'
+    }
+    
+    # Test getting access token
+    access_token = get_access_token()
+    if access_token:
+        results['token_test'] = 'SUCCESS'
+        results['token_length'] = len(access_token)
+        
+        # Test each room
+        for room_id, room_email in MEETING_ROOMS.items():
+            logger.info(f"Testing access to {room_id}: {room_email}")
+            events = get_room_calendar(room_email, access_token)
+            results['room_tests'][room_id] = {
+                'email': room_email,
+                'events_found': len(events),
+                'status': 'SUCCESS' if len(events) > 0 or events is not None else 'FAILED',
+                'events': events[:2] if events else []  # Include first 2 events for debugging
+            }
+    else:
+        results['token_test'] = 'FAILED'
+        results['error'] = 'Could not obtain access token'
+    
+    return jsonify(results)
+
+
+@app.route('/api/token-claims')
+def check_token_claims():
+    """Decode the access token to see what permissions it contains"""
+    import base64
+    import json
+    
+    access_token = get_access_token()
+    if not access_token:
+        return jsonify(error="Could not get token"), 500
+    
+    try:
+        # JWT tokens have 3 parts separated by dots
+        parts = access_token.split('.')
+        if len(parts) != 3:
+            return jsonify(error="Invalid token format"), 500
+        
+        # Decode the payload (second part)
+        # Add padding if needed
+        payload = parts[1]
+        payload += '=' * (4 - len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(payload)
+        claims = json.loads(decoded)
+        
+        return jsonify({
+            'roles': claims.get('roles', []),
+            'scopes': claims.get('scp', 'None'),
+            'app_id': claims.get('appid'),
+            'tenant_id': claims.get('tid'),
+            'all_claims': claims
+        })
+    except Exception as e:
+        return jsonify(error=f"Error decoding token: {str(e)}"), 500
+    
+
+@app.route('/api/force-token-refresh')
+def force_token_refresh():
+    """Force refresh the token and check permissions"""
+    import time
+    
+    # Get a fresh token
+    access_token = get_access_token()
+    
+    if not access_token:
+        return jsonify(error="Could not get token"), 500
+    
+    # Decode it to check permissions
+    import base64
+    import json
+    
+    parts = access_token.split('.')
+    payload = parts[1]
+    payload += '=' * (4 - len(payload) % 4)
+    decoded = base64.urlsafe_b64decode(payload)
+    claims = json.loads(decoded)
+    
+    return jsonify({
+        'timestamp': time.time(),
+        'roles': claims.get('roles', []),
+        'status': 'SUCCESS' if claims.get('roles') else 'NO PERMISSIONS YET',
+        'message': 'If roles is still empty, wait 5-10 minutes after granting admin consent'
+    })
 
 def periodic_update():
     """Schedule periodic updates of the news data"""
