@@ -14,6 +14,8 @@ import threading
 import uuid
 import traceback
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 # Set up crochet correctly - MUST BE BEFORE OTHER IMPORTS!
 import crochet
@@ -25,7 +27,6 @@ import scrapy
 from scrapy.crawler import CrawlerRunner
 from alternative_scraper import AlternativeScraper
 import requests
-from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(
@@ -437,6 +438,80 @@ MEETING_ROOMS = {
     'room2': os.environ.get('ROOM2_EMAIL', 'meetingroom2@yourdomain.com')
 }
 
+LOCAL_TIMEZONE = os.environ.get('ROOMS_TIMEZONE', 'Europe/Zurich')
+try:
+    LOCAL_TZ = ZoneInfo(LOCAL_TIMEZONE)
+except Exception:
+    LOCAL_TZ = datetime.now().astimezone().tzinfo or timezone.utc
+
+
+def to_utc_iso(dt):
+    return dt.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def parse_graph_datetime(date_str: str) -> datetime | None:
+    if not date_str:
+        return None
+    if date_str.endswith('Z'):
+        date_str = date_str[:-1] + '+00:00'
+    plus_idx = date_str.find('+', 10)
+    minus_idx = date_str.find('-', 10)
+    tz_index_candidates = [idx for idx in (plus_idx, minus_idx) if idx != -1]
+    if tz_index_candidates:
+        tz_index = min(tz_index_candidates)
+        datetime_part = date_str[:tz_index]
+        tz_part = date_str[tz_index:]
+    else:
+        datetime_part = date_str
+        tz_part = '+00:00'
+    if '.' in datetime_part:
+        base, frac = datetime_part.split('.', 1)
+        frac_digits = ''.join(ch for ch in frac if ch.isdigit())[:6]
+        datetime_part = f"{base}.{frac_digits.ljust(6, '0')}"
+    else:
+        datetime_part = f"{datetime_part}.000000"
+    tz_part = tz_part.replace(':', '')
+    try:
+        return datetime.strptime(f"{datetime_part}{tz_part}", "%Y-%m-%dT%H:%M:%S.%f%z")
+    except ValueError:
+        return datetime.strptime(f"{datetime_part.split('.')[0]}{tz_part}", "%Y-%m-%dT%H:%M:%S%z")
+
+
+def convert_to_local(dt_info: dict) -> datetime | None:
+    parsed = parse_graph_datetime((dt_info or {}).get('dateTime'))
+    if not parsed:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(LOCAL_TZ)
+
+
+def prepare_events(raw_events: list[dict]) -> list[dict]:
+    now_local = datetime.now(LOCAL_TZ)
+    end_of_day = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
+    prepared = []
+    for event in raw_events:
+        start_local = convert_to_local(event.get('start'))
+        end_local = convert_to_local(event.get('end'))
+        if not start_local or not end_local:
+            continue
+        if start_local > end_of_day:
+            continue
+        if end_local <= now_local:
+            continue
+        if start_local.date() != now_local.date() and end_local.date() != now_local.date():
+            continue
+        prepared.append({
+            'subject': event.get('subject', 'No Subject'),
+            'start': start_local.isoformat(),
+            'end': end_local.isoformat(),
+            'organizer': event.get('organizer', {}).get('emailAddress', {}).get('name', 'Unknown'),
+            'isAllDay': event.get('isAllDay', False)
+        })
+    prepared.sort(key=lambda item: item['start'])
+    return prepared[:2]
+
+
 def get_access_token():
     """Get access token for Microsoft Graph API"""
     token_url = f'https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token'
@@ -469,16 +544,16 @@ def get_room_calendar(room_email, access_token):
     
     headers = {
         'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Prefer': 'outlook.timezone="UTC"'
     }
     
-    # Get today's date range
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    now_local = datetime.now(LOCAL_TZ)
+    today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
     
-    # Format dates for Graph API - use UTC timezone format
-    start_datetime = today_start.isoformat() + 'Z'
-    end_datetime = today_end.isoformat() + 'Z'
+    start_datetime = to_utc_iso(today_start)
+    end_datetime = to_utc_iso(today_end)
     
     logger.info(f"Fetching calendar for {room_email} from {start_datetime} to {end_datetime}")
     
@@ -506,22 +581,8 @@ def get_room_calendar(room_email, access_token):
             if response.status_code == 200:
                 events = response.json().get('value', [])
                 logger.info(f"SUCCESS! Found {len(events)} events for {room_email}")
-                
-                # Process events to simplify data
-                processed_events = []
-                for event in events:
-                    processed_events.append({
-                        'subject': event.get('subject', 'No Subject'),
-                        'start': event['start']['dateTime'],
-                        'end': event['end']['dateTime'],
-                        'organizer': event.get('organizer', {}).get('emailAddress', {}).get('name', 'Unknown'),
-                        'isAllDay': event.get('isAllDay', False)
-                    })
-                
-                return processed_events
-            else:
-                logger.warning(f"Endpoint failed with status {response.status_code}: {response.text}")
-                
+                return prepare_events(events)
+            
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP Error for {endpoint}: {str(e)}")
             logger.error(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
@@ -535,11 +596,11 @@ def get_room_calendar(room_email, access_token):
         schedule_data = {
             "schedules": [room_email],
             "startTime": {
-                "dateTime": start_datetime,
+                "dateTime": today_start.astimezone(timezone.utc).isoformat(),
                 "timeZone": "UTC"
             },
             "endTime": {
-                "dateTime": end_datetime,
+                "dateTime": today_end.astimezone(timezone.utc).isoformat(),
                 "timeZone": "UTC"
             }
         }
@@ -550,22 +611,21 @@ def get_room_calendar(room_email, access_token):
         if response.status_code == 200:
             result = response.json()
             logger.info(f"getSchedule result: {result}")
-            # Parse schedule response - structure is different
             schedule_items = result.get('value', [{}])[0].get('scheduleItems', [])
             
-            processed_events = []
+            schedule_events = []
             for item in schedule_items:
                 if item.get('status') == 'busy':
-                    processed_events.append({
+                    schedule_events.append({
                         'subject': item.get('subject', 'Busy'),
-                        'start': item['start']['dateTime'],
-                        'end': item['end']['dateTime'],
-                        'organizer': 'Unknown',
+                        'start': item.get('start', {}),
+                        'end': item.get('end', {}),
+                        'organizer': {'emailAddress': {'name': 'Unknown'}},
                         'isAllDay': item.get('isAllDay', False)
                     })
             
-            logger.info(f"getSchedule found {len(processed_events)} events")
-            return processed_events
+            logger.info(f"getSchedule found {len(schedule_events)} events")
+            return prepare_events(schedule_events)
         else:
             logger.error(f"getSchedule failed: {response.text}")
             
