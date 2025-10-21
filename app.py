@@ -72,7 +72,7 @@ class NewsManager:
 # Initialize news manager and app AFTER crochet setup
 news_manager = NewsManager()
 app = Flask(__name__)
-app.secret_key = "HU71GHjh87zggjh7H867DF564d"
+app.secret_key = "HU71GHjh87zggjh7H867DF564d5"
 
 # Create a crawler runner with specific settings to avoid reactor issues
 crawl_runner = CrawlerRunner({
@@ -601,6 +601,8 @@ def get_room_calendar(room_email, access_token):
                     'filtered_out_past_events': filtered_past,
                     'source': endpoint
                 }
+            else:
+                logger.error(f"Graph API error for {endpoint}: {response.status_code} - {response.text}")
             
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP Error for {endpoint}: {str(e)}")
