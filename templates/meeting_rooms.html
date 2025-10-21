@@ -297,33 +297,45 @@
         }
         
         function loadRoomCalendar(roomId) {
-            fetch(`/api/room-calendar/${roomId}`)
-                .then(response => response.json())
+            const timestamp = new Date().getTime();
+            console.log(`[${new Date().toLocaleTimeString()}] Fetching calendar for ${roomId}`);
+            
+            fetch(`/api/room-calendar/${roomId}?t=${timestamp}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    console.log(`[${new Date().toLocaleTimeString()}] Received data for ${roomId}:`, data);
                     if (data.error) {
                         document.getElementById(`${roomId}-timeline`).innerHTML = 
                             `<div class="error">${data.error}</div>`;
                         return;
                     }
-                    renderTimeline(roomId, data.events);
+                    renderTimeline(roomId, data.events || []);
                 })
                 .catch(error => {
-                    console.error(`Error loading ${roomId}:`, error);
+                    console.error(`[${new Date().toLocaleTimeString()}] Error loading ${roomId}:`, error);
                     document.getElementById(`${roomId}-timeline`).innerHTML = 
                         '<div class="error">Failed to load calendar</div>';
                 });
         }
         
         function refreshAll() {
+            console.log(`[${new Date().toLocaleTimeString()}] Refreshing all calendars`);
             updateCurrentTime();
             loadRoomCalendar('room1');
             loadRoomCalendar('room2');
         }
         
         // Initial load
+        console.log('Page loaded, starting initial fetch');
         refreshAll();
         
         // Update every minute
+        console.log('Setting up 60-second refresh interval');
         setInterval(refreshAll, 60000);
         
         // Update time display every second

@@ -15,9 +15,30 @@ SERVICE_NAME="zhaw-cai-news"
 if ! command -v uv &> /dev/null; then
     echo "Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.cargo/bin:$PATH"
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 else
     echo "uv is already installed"
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+fi
+
+UV_BIN="$(command -v uv || true)"
+if [ -z "$UV_BIN" ]; then
+    echo "uv not found after installation. Check PATH."
+    exit 1
+fi
+
+ENV_FILE="/etc/${SERVICE_NAME}.env"
+if ! sudo test -f "$ENV_FILE"; then
+    echo "Creating protected environment file at $ENV_FILE"
+    sudo tee "$ENV_FILE" > /dev/null <<'EOF'
+# AZURE_CLIENT_ID=...
+# AZURE_CLIENT_SECRET=...
+# AZURE_TENANT_ID=...
+# ROOM1_EMAIL=...
+# ROOM2_EMAIL=...
+# ENABLE_GRAPH_DEBUG=false
+EOF
+    sudo chmod 600 "$ENV_FILE"
 fi
 
 # Install Python dependencies
@@ -38,8 +59,9 @@ After=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$APP_DIR
-Environment="PATH=$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=$HOME/.cargo/bin/uv run fastapi dev src/zhaw_cai_news/main.py --host 0.0.0.0 --port 8000
+EnvironmentFile=$ENV_FILE
+Environment="PATH=$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=$UV_BIN run gunicorn --workers 4 --bind 0.0.0.0:8000 app:app
 Restart=always
 RestartSec=10
 
@@ -71,3 +93,4 @@ echo "  Stop service:  sudo systemctl stop $SERVICE_NAME"
 echo "  Start service: sudo systemctl start $SERVICE_NAME"
 echo "  Restart:       sudo systemctl restart $SERVICE_NAME"
 echo "  View logs:     sudo journalctl -u $SERVICE_NAME -f"
+echo "  Environment file: sudo nano $ENV_FILE"

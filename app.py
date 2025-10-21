@@ -22,7 +22,7 @@ import crochet
 crochet.setup()
 
 # Then import Flask and other libraries
-from flask import Flask, send_file, render_template, send_from_directory, jsonify, request
+from flask import Flask, send_file, render_template, send_from_directory, jsonify, request, abort
 import scrapy
 from scrapy.crawler import CrawlerRunner
 from alternative_scraper import AlternativeScraper
@@ -444,6 +444,9 @@ try:
 except Exception:
     LOCAL_TZ = datetime.now().astimezone().tzinfo or timezone.utc
 
+GRAPH_DEBUG_ENABLED = os.environ.get('ENABLE_GRAPH_DEBUG', 'false').lower() == 'true'
+EVENT_RETENTION_GRACE = timedelta(minutes=5)
+
 
 def to_utc_iso(dt):
     return dt.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
@@ -486,10 +489,12 @@ def convert_to_local(dt_info: dict) -> datetime | None:
     return parsed.astimezone(LOCAL_TZ)
 
 
-def prepare_events(raw_events: list[dict]) -> list[dict]:
+def prepare_events(raw_events: list[dict]) -> tuple[list[dict], list[dict]]:
     now_local = datetime.now(LOCAL_TZ)
+    cutoff_time = now_local - EVENT_RETENTION_GRACE
     end_of_day = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
-    prepared = []
+    prepared: list[dict] = []
+    filtered_past_events: list[dict] = []
     for event in raw_events:
         start_local = convert_to_local(event.get('start'))
         end_local = convert_to_local(event.get('end'))
@@ -497,7 +502,12 @@ def prepare_events(raw_events: list[dict]) -> list[dict]:
             continue
         if start_local > end_of_day:
             continue
-        if end_local <= now_local:
+        if end_local <= cutoff_time:
+            filtered_past_events.append({
+                'subject': event.get('subject', 'No Subject'),
+                'end': end_local.isoformat(),
+                'filtered_at': now_local.isoformat()
+            })
             continue
         if start_local.date() != now_local.date() and end_local.date() != now_local.date():
             continue
@@ -509,7 +519,7 @@ def prepare_events(raw_events: list[dict]) -> list[dict]:
             'isAllDay': event.get('isAllDay', False)
         })
     prepared.sort(key=lambda item: item['start'])
-    return prepared[:2]
+    return prepared[:2], filtered_past_events
 
 
 def get_access_token():
@@ -579,9 +589,18 @@ def get_room_calendar(room_email, access_token):
             logger.info(f"Graph API response status: {response.status_code}")
             
             if response.status_code == 200:
-                events = response.json().get('value', [])
-                logger.info(f"SUCCESS! Found {len(events)} events for {room_email}")
-                return prepare_events(events)
+                raw_events = response.json().get('value', [])
+                filtered_events, filtered_past = prepare_events(raw_events)
+                logger.info(
+                    "Graph returned %s events for %s; delivering %s after filtering (filtered past: %s)",
+                    len(raw_events), room_email, len(filtered_events), len(filtered_past)
+                )
+                return {
+                    'events': filtered_events,
+                    'raw_event_count': len(raw_events),
+                    'filtered_out_past_events': filtered_past,
+                    'source': endpoint
+                }
             
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP Error for {endpoint}: {str(e)}")
@@ -611,7 +630,7 @@ def get_room_calendar(room_email, access_token):
         if response.status_code == 200:
             result = response.json()
             logger.info(f"getSchedule result: {result}")
-            schedule_items = result.get('value', [{}])[0].get('scheduleItems', [])
+            schedule_events = result.get('value', [{}])[0].get('scheduleItems', [])
             
             schedule_events = []
             for item in schedule_items:
@@ -624,8 +643,17 @@ def get_room_calendar(room_email, access_token):
                         'isAllDay': item.get('isAllDay', False)
                     })
             
-            logger.info(f"getSchedule found {len(schedule_events)} events")
-            return prepare_events(schedule_events)
+            filtered_events, filtered_past = prepare_events(schedule_events)
+            logger.info(
+                "getSchedule returned %s events for %s; delivering %s after filtering (filtered past: %s)",
+                len(schedule_events), room_email, len(filtered_events), len(filtered_past)
+            )
+            return {
+                'events': filtered_events,
+                'raw_event_count': len(schedule_events),
+                'filtered_out_past_events': filtered_past,
+                'source': 'getSchedule'
+            }
         else:
             logger.error(f"getSchedule failed: {response.text}")
             
@@ -633,8 +661,12 @@ def get_room_calendar(room_email, access_token):
         logger.error(f"Error with getSchedule API: {str(e)}")
     
     logger.error(f"All methods failed to fetch calendar for {room_email}")
-    return []
-
+    return {
+        'events': [],
+        'raw_event_count': 0,
+        'filtered_out_past_events': [],
+        'source': None
+    }
 @app.route('/api/room-calendar/<room_id>')
 def get_room_calendar_api(room_id):
     """API endpoint to fetch room calendar data"""
@@ -649,13 +681,26 @@ def get_room_calendar_api(room_id):
         logger.error("Failed to get access token")
         return jsonify(error="Failed to authenticate with Microsoft Graph API"), 500
     
-    events = get_room_calendar(room_email, access_token)
-    logger.info(f"Returning {len(events)} events for {room_id}")
-    return jsonify(events=events, room_email=room_email)
+    result = get_room_calendar(room_email, access_token)
+    logger.info(
+        "Returning %s events (raw %s) for %s; filtered past entries: %s",
+        len(result['events']), result['raw_event_count'], room_id, len(result['filtered_out_past_events'])
+    )
+    return jsonify(
+        events=result['events'],
+        room_email=room_email,
+        raw_event_count=result['raw_event_count'],
+        filtered_out_past_events=result['filtered_out_past_events'],
+        source=result['source'],
+        fetched_at=datetime.now(LOCAL_TZ).isoformat()
+    )
 
 
 @app.route('/api/test-graph-api')
 def test_graph_api():
+    if not GRAPH_DEBUG_ENABLED:
+        abort(404)
+    
     """Debug endpoint to test Graph API connection and permissions"""
     results = {
         'tenant_id': TENANT_ID,
@@ -682,12 +727,15 @@ def test_graph_api():
         # Test each room
         for room_id, room_email in MEETING_ROOMS.items():
             logger.info(f"Testing access to {room_id}: {room_email}")
-            events = get_room_calendar(room_email, access_token)
+            result = get_room_calendar(room_email, access_token)
+            events = result['events']
             results['room_tests'][room_id] = {
                 'email': room_email,
                 'events_found': len(events),
-                'status': 'SUCCESS' if len(events) > 0 or events is not None else 'FAILED',
-                'events': events[:2] if events else []  # Include first 2 events for debugging
+                'raw_event_count': result['raw_event_count'],
+                'filtered_out_past_events': result['filtered_out_past_events'],
+                'status': 'SUCCESS' if events else 'NO EVENTS',
+                'events': events
             }
     else:
         results['token_test'] = 'FAILED'
@@ -698,6 +746,9 @@ def test_graph_api():
 
 @app.route('/api/token-claims')
 def check_token_claims():
+    if not GRAPH_DEBUG_ENABLED:
+        abort(404)
+    
     """Decode the access token to see what permissions it contains"""
     import base64
     import json
@@ -732,6 +783,9 @@ def check_token_claims():
 
 @app.route('/api/force-token-refresh')
 def force_token_refresh():
+    if not GRAPH_DEBUG_ENABLED:
+        abort(404)
+    
     """Force refresh the token and check permissions"""
     import time
     
