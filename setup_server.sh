@@ -62,7 +62,7 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment="PATH=$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
 # FIX: Execute gunicorn as a Python module (-m) to ensure it's found within the uv environment.
-ExecStart=$UV_BIN run python -m gunicorn --workers 4 --bind 0.0.0.0:8000 app:app
+ExecStart=$UV_BIN run python -m gunicorn --workers 1 --bind 0.0.0.0:8000 app:app
 Restart=always
 RestartSec=10
 
