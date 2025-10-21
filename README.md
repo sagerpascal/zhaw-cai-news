@@ -8,13 +8,21 @@ A simple Flask-Webserver which displays the latest [news](https://www.zhaw.ch/en
 
 ## Run the App
 
-*Note: This application is only tested for Chromium-based browsers*
+Please create first a .env file:
 
-Create a folder `static/videos` and insert the CAI-Video
+```bash
+cp .env.example .env
+```
 
-````bash
-python -m flask run
-````
+Then install the dependencies:
 
-Afterwards, open the webpage and click on the page so that it is focused.
-Otherwise, the video will not play properly.
+```bash
+uv sync
+```
+
+Finally, run the application:
+
+```bash
+uv run app.py
+```
+

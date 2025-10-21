@@ -61,7 +61,8 @@ User=$USER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment="PATH=$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=$UV_BIN run gunicorn --workers 4 --bind 0.0.0.0:8000 app:app
+# FIX: Execute gunicorn as a Python module (-m) to ensure it's found within the uv environment.
+ExecStart=$UV_BIN run python -m gunicorn --workers 4 --bind 0.0.0.0:8000 app:app
 Restart=always
 RestartSec=10
 
@@ -73,7 +74,7 @@ EOF
 echo "Enabling and starting service..."
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE_NAME"
-sudo systemctl start "$SERVICE_NAME"
+sudo systemctl restart "$SERVICE_NAME" # Using restart instead of start to ensure changes are applied
 
 # Get server IP for display
 SERVER_IP=$(hostname -I | awk '{print $1}')
