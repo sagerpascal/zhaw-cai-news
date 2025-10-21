@@ -2,7 +2,13 @@
 import os
 # Load environment variables from .env file
 from dotenv import load_dotenv
+
 load_dotenv()
+
+# Install the reactor right after loading env
+from twisted.internet import selectreactor
+
+selectreactor.install()
 
 # Set environment variable to use the correct reactor
 os.environ["SCRAPY_REACTOR"] = "twisted.internet.selectreactor.SelectReactor"
@@ -13,12 +19,15 @@ import logging
 import threading
 import uuid
 import traceback
+import bleach
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from functools import wraps
 
 # Set up crochet correctly - MUST BE BEFORE OTHER IMPORTS!
 import crochet
+
 crochet.setup()
 
 # Then import Flask and other libraries
@@ -35,6 +44,43 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SECRET_KEY = os.environ.get('FLASK_SECRET_KEY')
+ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY')
+if not ADMIN_API_KEY:
+    logger.warning("ADMIN_API_KEY is not set. Admin/scrape endpoints are unsecured!")
+
+GRAPH_DEBUG_ENABLED = os.environ.get('ENABLE_GRAPH_DEBUG', 'false').lower() == 'true'
+
+
+def debug_only(f):
+    """Restricts an endpoint to only be accessible if GRAPH_DEBUG_ENABLED is true."""
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not GRAPH_DEBUG_ENABLED:
+            abort(404)
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def require_api_key(f):
+    """Restricts an endpoint to only be accessible with a valid ADMIN_API_KEY."""
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not ADMIN_API_KEY:
+            logger.error("Admin action attempted but ADMIN_API_KEY is not configured.")
+            abort(503)  # Service Unavailable
+
+        key = request.headers.get('X-API-KEY')
+        if not key or key != ADMIN_API_KEY:
+            abort(401)  # Unauthorized
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
 # Create global state management
 class NewsManager:
     def __init__(self):
@@ -43,13 +89,13 @@ class NewsManager:
         self.scrape_complete = False
         self.crawl_runner = CrawlerRunner()
         self.last_update_time = None
-    
+
     def clear_news(self):
         self.news = []
-        
+
     def is_empty(self):
         return len(self.news) == 0
-        
+
     def reset_state(self):
         self.scrape_in_progress = False
         self.scrape_complete = False
@@ -72,7 +118,7 @@ class NewsManager:
 # Initialize news manager and app AFTER crochet setup
 news_manager = NewsManager()
 app = Flask(__name__)
-app.secret_key = "HU71GHjh87zggjh7H867DF564d5"
+app.secret_key = SECRET_KEY
 
 # Create a crawler runner with specific settings to avoid reactor issues
 crawl_runner = CrawlerRunner({
@@ -85,6 +131,9 @@ news_manager.crawl_runner = crawl_runner
 class NewsSpider(scrapy.Spider):
     name = "zhaw-news-spider"
     base_url = "https://www.zhaw.ch/"
+
+    ALLOWED_TAGS = ['p', 'b', 'strong', 'i', 'em', 'ul', 'ol', 'li', 'a', 'br']
+    ALLOWED_ATTRIBUTES = {'a': ['href', 'title']}
 
     def start_requests(self):
         logger.info(f"Starting NewsSpider requests")
@@ -102,14 +151,14 @@ class NewsSpider(scrapy.Spider):
 
     def parse_main(self, response):
         logger.info(f"Parsing main page: {response.url}")
-        
+
         # Look for news items in the zhaw-newswall
         news_links = []
-        
+
         # Find all tiles with class "tile image news News"
         news_tiles = response.css('div.zhaw-newswall div.tile.image.news')
         logger.info(f"Found {len(news_tiles)} news tiles in newswall")
-        
+
         for tile in news_tiles:
             # Check if the tile has "newswall-label news" (not "newswall-label social")
             label_type = tile.css('div.newswall-label::attr(class)').get()
@@ -119,13 +168,13 @@ class NewsSpider(scrapy.Spider):
                 if href:
                     news_links.append(href)
                     logger.info(f"Found news link: {href}")
-        
+
         if not news_links:
             logger.warning(f"No news links found on {response.url}. Check CSS selector.")
             # Fallback selector in case the structure has changed
             alt_news_links = response.css('a[href*="news"]').getall()
             logger.info(f"Alternative selector found {len(alt_news_links)} links")
-            
+
         for url in news_links:
             full_url = f'{self.base_url}{url.lstrip("/")}' if not url.startswith('http') else url
             logger.info(f"Requesting news page: {full_url}")
@@ -134,40 +183,51 @@ class NewsSpider(scrapy.Spider):
     def parse(self, response):
         try:
             logger.info(f"Parsing news page: {response.url}")
-            
+
             title = response.css("#main-page-title::text").get()
             if not title:
                 title = response.css("h1::text").get()  # Fallback selector
-                
+
             lead = response.css(".lead::text").get()
             if not lead:
                 lead = response.css("strong::text").get()  # Fallback selector
-                
-            datetime = response.css(".datetime>time::text").get()
-            if not datetime:
-                datetime = "No date available"  # Default value
-                
+
+            datetime_str = response.css(".datetime>time::text").get()
+            if not datetime_str:
+                datetime_str = "No date available"  # Default value
+
             # Updated selector based on the actual HTML structure
-            paragraphs = response.css(".news.news-single .article .frame-type-text p").getall()
-            if not paragraphs:
+            paragraphs_html = response.css(".news.news-single .article .frame-type-text p").getall()
+            if not paragraphs_html:
                 # Try the old selectors as fallbacks
-                paragraphs = response.css(".news .clearfix>p, .news .clearfix>ul").getall()
-                
+                paragraphs_html = response.css(".news .clearfix>p, .news .clearfix>ul").getall()
+
             img_tag = response.css(".news-img-wrap img").get()
             image_url = "https://www.zhaw.ch/static/images/default.jpg"  # Default image
-            
+
             if img_tag:
                 try:
                     image_url = "https://www.zhaw.ch" + img_tag.split('src=')[1].split('\"')[1]
                 except IndexError:
                     logger.warning(f"Could not parse image URL from: {img_tag}")
-            
+
             if title:  # As long as we have a title, create a news item
+                cleaned_title = bleach.clean(' '.join((title or "").replace("\n", "").split()), tags=[], strip=True)
+                cleaned_lead = bleach.clean(' '.join((lead or "News from ZHAW CAI").replace("\n", "").split()), tags=[],
+                                            strip=True)
+                cleaned_datetime = bleach.clean(' '.join((datetime_str or "").replace("\n", "").split()), tags=[],
+                                                strip=True)
+
+                cleaned_paragraphs = [
+                                         bleach.clean(p, tags=self.ALLOWED_TAGS, attributes=self.ALLOWED_ATTRIBUTES)
+                                         for p in (paragraphs_html or [])
+                                     ] or ["<p>No content available</p>"]
+
                 result = {
-                    'title': ' '.join((title or "").replace("\n", "").split()),
-                    'lead': ' '.join((lead or "News from ZHAW CAI").replace("\n", "").split()),
-                    'datetime': ' '.join((datetime or "").replace("\n", "").split()),
-                    'paragraphs': paragraphs or ["<p>No content available</p>"],
+                    'title': cleaned_title,
+                    'lead': cleaned_lead,
+                    'datetime': cleaned_datetime,
+                    'paragraphs': cleaned_paragraphs,
                     'image_url': image_url,
                     'url': response.url
                 }
@@ -200,26 +260,27 @@ def favicon():
 
 
 @app.route('/crawl')
+@require_api_key
 def crawl_for_quotes():
     if news_manager.scrape_in_progress:
         return jsonify(status='SCRAPE IN PROGRESS')
-    
+
     if news_manager.scrape_complete and not news_manager.is_empty():
         return jsonify(status='SCRAPE COMPLETE', news_count=len(news_manager.news))
-    
+
     # Start a new scrape
     news_manager.scrape_in_progress = True
     news_manager.scrape_complete = False
     news_manager.clear_news()
-    
+
     try:
         # Use crochet to run the spider in the background
         scrape_with_crochet(news_manager.news)
         return jsonify(status='SCRAPING STARTED')
     except Exception as e:
         news_manager.reset_state()
-        logger.error(f"Error starting scrape: {str(e)}")
-        return jsonify(status='ERROR', message=str(e)), 500
+        logger.error(f"Error starting scrape: {str(e)}", exc_info=True)
+        return jsonify(status='ERROR', message='An internal server error occurred.'), 500
 
 
 @app.route('/status')
@@ -234,15 +295,16 @@ def status():
 
 
 @app.route('/force_reset')
+@require_api_key
 def force_reset():
     """Force reset the scraping state and trigger a new scrape"""
     news_manager.reset_state()
     news_manager.clear_news()
-    
+
     # Start a new scrape
     news_manager.scrape_in_progress = True
     scrape_with_crochet(news_manager.news)
-    
+
     return jsonify({
         'status': 'Reset triggered, new scrape started',
         'time': time.time()
@@ -250,6 +312,7 @@ def force_reset():
 
 
 @app.route('/test_dummy_news')
+@debug_only
 def add_test_news():
     """Add dummy news for testing"""
     news_manager.add_dummy_news()
@@ -260,24 +323,25 @@ def add_test_news():
 
 
 @app.route('/direct_scrape')
+@debug_only
 def direct_scrape():
     """Directly run the spider without using crochet for debugging"""
     try:
         logger.info("Direct scrape attempt")
         news_manager.clear_news()
         news_manager.scrape_in_progress = True
-        
+
         # Use a unique job ID
         job_id = str(uuid.uuid4())
-        
+
         try:
             @crochet.wait_for(timeout=60.0)
             def run_spider():
                 logger.info("Running spider directly")
                 return crawl_runner.crawl(NewsSpider, news_=news_manager.news)
-                
+
             run_spider()
-            
+
             # Check if we got any news
             if len(news_manager.news) == 0:
                 logger.warning("Direct scrape completed but no news found!")
@@ -294,14 +358,14 @@ def direct_scrape():
             news_manager.reset_state()
             news_manager.add_dummy_news()
             return jsonify(status="Scrape timed out, added dummy news"), 500
-            
+
     except Exception as e:
         logger.error(f"Error in direct scrape: {str(e)}")
         logger.error(traceback.format_exc())
         news_manager.reset_state()
         # Add a dummy news item so the site is usable
         news_manager.add_dummy_news()
-        return jsonify(status="Error, added dummy news", error=str(e)), 500
+        return jsonify(status="Error, added dummy news", error='An internal server error occurred.'), 500
 
 
 @crochet.run_in_reactor
@@ -333,6 +397,8 @@ def finished_scrape(result):
 def handle_scrape_error(failure):
     logger.error(f"Scraping error: {failure}")
     news_manager.reset_state()
+    # Add dummy news so the site isn't broken
+    news_manager.add_dummy_news()
     return failure
 
 
@@ -340,7 +406,7 @@ def handle_scrape_error(failure):
 def main():
     # Check if meeting rooms should be displayed via URL parameter
     show_rooms = request.args.get('rooms', 'false').lower() == 'true'
-    
+
     if news_manager.is_empty():
         if not news_manager.scrape_in_progress:
             # Start a scrape if none is in progress and we have no news
@@ -352,40 +418,33 @@ def main():
                 logger.error(f"Error starting scrape from main route: {str(e)}")
                 # Add a dummy news item so there's something to display
                 news_manager.add_dummy_news()
-                return render_template('index.html',
-                                      title=news_manager.news[0]['title'],
-                                      paragraphs=merge_paragraphs(news_manager.news[0]['paragraphs']),
-                                      datetime=news_manager.news[0]['datetime'],
-                                      lead=news_manager.news[0]['lead'],
-                                      image_url=news_manager.news[0]['image_url'],
-                                      news_id=0,
-                                      total_news=1,
-                                      show_rooms=show_rooms,
-                                      room1_name=os.environ.get('ROOM1_NAME', 'Meeting Room 1'),
-                                      room2_name=os.environ.get('ROOM2_NAME', 'Meeting Room 2'))
-        return render_template('loading.html', message="Loading news, please wait...")
-    
+                # Dummy news was added, fall through to render
+
+        # If still empty (scrape just started), show loading
+        if news_manager.is_empty():
+            return render_template('loading.html', message="Loading news, please wait...")
+
     # Display the first news item
     selected_news = news_manager.news[0]
     logger.info(f"Rendering index with news item: {selected_news['title']}")
-    return render_template('index.html', 
-                          title=selected_news['title'],
-                          paragraphs=merge_paragraphs(selected_news['paragraphs']),
-                          datetime=selected_news['datetime'],
-                          lead=selected_news['lead'],
-                          image_url=selected_news['image_url'],
-                          news_id=0,
-                          total_news=len(news_manager.news),
-                          show_rooms=show_rooms,
-                          room1_name=os.environ.get('ROOM1_NAME', 'Meeting Room 1'),
-                          room2_name=os.environ.get('ROOM2_NAME', 'Meeting Room 2'))
+    return render_template('index.html',
+                           title=selected_news['title'],
+                           paragraphs=merge_paragraphs(selected_news['paragraphs']),
+                           datetime=selected_news['datetime'],
+                           lead=selected_news['lead'],
+                           image_url=selected_news['image_url'],
+                           news_id=0,
+                           total_news=len(news_manager.news),
+                           show_rooms=show_rooms,
+                           room1_name=os.environ.get('ROOM1_NAME', 'Meeting Room 1'),
+                           room2_name=os.environ.get('ROOM2_NAME', 'Meeting Room 2'))
 
 
 @app.route('/next_news/<int:news_id>')
 def get_next(news_id):
     if news_manager.is_empty():
         return jsonify(error="No news available"), 404
-    
+
     selected_news = news_manager.news[news_id % len(news_manager.news)]
     return jsonify(title=selected_news['title'],
                    paragraphs=merge_paragraphs(selected_news['paragraphs']),
@@ -397,32 +456,48 @@ def get_next(news_id):
 
 
 @app.route('/alternative_scrape')
+@debug_only
 def alternative_scrape():
     """Use the alternative scraper instead of Scrapy"""
     try:
         logger.info("Starting alternative scrape")
         news_manager.clear_news()
-        
+
         # Create and use the alternative scraper
         alt_scraper = AlternativeScraper()
         fetched_news = alt_scraper.fetch_news()
-        
+
         if fetched_news:
-            news_manager.news = fetched_news
+            # (Assuming AlternativeScraper returns a similar dict structure)
+            ALLOWED_TAGS = ['p', 'b', 'strong', 'i', 'em', 'ul', 'ol', 'li', 'a', 'br']
+            ALLOWED_ATTRIBUTES = {'a': ['href', 'title']}
+
+            cleaned_news = []
+            for item in fetched_news:
+                item['title'] = bleach.clean(item.get('title', 'No Title'), tags=[], strip=True)
+                item['lead'] = bleach.clean(item.get('lead', ''), tags=[], strip=True)
+                item['paragraphs'] = [
+                                         bleach.clean(p, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES)
+                                         for p in (item.get('paragraphs', []))
+                                     ] or ["<p>No content available</p>"]
+                cleaned_news.append(item)
+
+            news_manager.news = cleaned_news
             news_manager.scrape_complete = True
             news_manager.scrape_in_progress = False
             news_manager.last_update_time = time.time()
-            logger.info(f"Alternative scrape completed successfully with {len(fetched_news)} items")
-            return jsonify(status="Alternative scrape completed", news_count=len(fetched_news))
+            logger.info(f"Alternative scrape completed successfully with {len(cleaned_news)} items")
+            return jsonify(status="Alternative scrape completed", news_count=len(cleaned_news))
         else:
             logger.warning("Alternative scrape returned no results")
             news_manager.add_dummy_news()
             return jsonify(status="Alternative scrape found no news, added dummy news")
     except Exception as e:
-        logger.error(f"Error in alternative scrape: {str(e)}")
+        logger.error(f"Error in alternative scrape: {str(e)}", exc_info=True)
         news_manager.reset_state()
         news_manager.add_dummy_news()
-        return jsonify(status="Error in alternative scrape, added dummy news", error=str(e))
+        return jsonify(status="Error in alternative scrape, added dummy news",
+                       error="An internal server error occurred.")
 
 
 # Microsoft Graph API configuration
@@ -442,9 +517,9 @@ LOCAL_TIMEZONE = os.environ.get('ROOMS_TIMEZONE', 'Europe/Zurich')
 try:
     LOCAL_TZ = ZoneInfo(LOCAL_TIMEZONE)
 except Exception:
+    logger.warning(f"Could not load timezone {LOCAL_TIMEZONE}, falling back.")
     LOCAL_TZ = datetime.now().astimezone().tzinfo or timezone.utc
 
-GRAPH_DEBUG_ENABLED = os.environ.get('ENABLE_GRAPH_DEBUG', 'false').lower() == 'true'
 EVENT_RETENTION_GRACE = timedelta(minutes=5)
 
 
@@ -531,10 +606,10 @@ def get_access_token():
         'client_secret': CLIENT_SECRET,
         'scope': 'https://graph.microsoft.com/.default'
     }
-    
+
     try:
         logger.info(f"Requesting access token for tenant: {TENANT_ID}")
-        response = requests.post(token_url, data=token_data)
+        response = requests.post(token_url, data=token_data, timeout=10)
         response.raise_for_status()
         token = response.json().get('access_token')
         logger.info("Successfully obtained access token")
@@ -543,7 +618,7 @@ def get_access_token():
         logger.error(f"Error getting access token: {str(e)}")
         if hasattr(e, 'response') and e.response is not None:
             logger.error(f"Response status: {e.response.status_code}")
-            logger.error(f"Response body: {e.response.text}")
+            logger.error(f"Response body (first 200 chars): {e.response.text[:200]}...")
         return None
 
 def get_room_calendar(room_email, access_token):
@@ -551,22 +626,22 @@ def get_room_calendar(room_email, access_token):
     if not access_token:
         logger.error("No access token provided to get_room_calendar")
         return []
-    
+
     headers = {
         'Authorization': f'Bearer {access_token}',
         'Content-Type': 'application/json',
         'Prefer': 'outlook.timezone="UTC"'
     }
-    
+
     now_local = datetime.now(LOCAL_TZ)
     today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
-    
+
     start_datetime = to_utc_iso(today_start)
     end_datetime = to_utc_iso(today_end)
-    
+
     logger.info(f"Fetching calendar for {room_email} from {start_datetime} to {end_datetime}")
-    
+
     # Try multiple endpoints - rooms may need different access patterns
     endpoints_to_try = [
         # Method 1: Direct calendar access (requires Calendars.Read)
@@ -574,20 +649,20 @@ def get_room_calendar(room_email, access_token):
         # Method 2: Schedule information (requires Calendars.Read or Schedule.Read.All)
         f"{GRAPH_API_ENDPOINT}/users/{room_email}/calendar/calendarView",
     ]
-    
+
     params = {
         'startDateTime': start_datetime,
         'endDateTime': end_datetime,
         '$select': 'subject,start,end,organizer,isAllDay',
         '$orderby': 'start/dateTime'
     }
-    
+
     for endpoint in endpoints_to_try:
         try:
             logger.info(f"Trying endpoint: {endpoint}")
-            response = requests.get(endpoint, headers=headers, params=params)
+            response = requests.get(endpoint, headers=headers, params=params, timeout=10)
             logger.info(f"Graph API response status: {response.status_code}")
-            
+
             if response.status_code == 200:
                 raw_events = response.json().get('value', [])
                 filtered_events, filtered_past = prepare_events(raw_events)
@@ -602,14 +677,14 @@ def get_room_calendar(room_email, access_token):
                     'source': endpoint
                 }
             else:
-                logger.error(f"Graph API error for {endpoint}: {response.status_code} - {response.text}")
-            
+                logger.error(f"Graph API error for {endpoint}: {response.status_code} - {response.text[:200]}...")
+
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP Error for {endpoint}: {str(e)}")
-            logger.error(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
+            logger.error(f"Response: {e.response.text[:200] if hasattr(e, 'response') else 'No response'}...")
         except Exception as e:
             logger.error(f"Error trying {endpoint}: {str(e)}")
-    
+
     # If all methods fail, try getSchedule API as last resort
     try:
         logger.info("Trying getSchedule API as fallback")
@@ -625,15 +700,15 @@ def get_room_calendar(room_email, access_token):
                 "timeZone": "UTC"
             }
         }
-        
-        response = requests.post(schedule_url, headers=headers, json=schedule_data)
+
+        response = requests.post(schedule_url, headers=headers, json=schedule_data, timeout=10)
         logger.info(f"getSchedule response status: {response.status_code}")
-        
+
         if response.status_code == 200:
             result = response.json()
-            logger.info(f"getSchedule result: {result}")
-            schedule_events = result.get('value', [{}])[0].get('scheduleItems', [])
-            
+            logger.info(f"getSchedule result: {str(result)[:200]}...")
+            schedule_items = result.get('value', [{}])[0].get('scheduleItems', [])
+
             schedule_events = []
             for item in schedule_items:
                 if item.get('status') == 'busy':
@@ -644,7 +719,7 @@ def get_room_calendar(room_email, access_token):
                         'organizer': {'emailAddress': {'name': 'Unknown'}},
                         'isAllDay': item.get('isAllDay', False)
                     })
-            
+
             filtered_events, filtered_past = prepare_events(schedule_events)
             logger.info(
                 "getSchedule returned %s events for %s; delivering %s after filtering (filtered past: %s)",
@@ -657,11 +732,11 @@ def get_room_calendar(room_email, access_token):
                 'source': 'getSchedule'
             }
         else:
-            logger.error(f"getSchedule failed: {response.text}")
-            
+            logger.error(f"getSchedule failed: {response.text[:200]}...")
+
     except Exception as e:
         logger.error(f"Error with getSchedule API: {str(e)}")
-    
+
     logger.error(f"All methods failed to fetch calendar for {room_email}")
     return {
         'events': [],
@@ -669,20 +744,22 @@ def get_room_calendar(room_email, access_token):
         'filtered_out_past_events': [],
         'source': None
     }
+
+
 @app.route('/api/room-calendar/<room_id>')
 def get_room_calendar_api(room_id):
     """API endpoint to fetch room calendar data"""
     if room_id not in MEETING_ROOMS:
         return jsonify(error="Invalid room ID"), 404
-    
+
     room_email = MEETING_ROOMS[room_id]
     logger.info(f"API request for room calendar: {room_id} ({room_email})")
     access_token = get_access_token()
-    
+
     if not access_token:
         logger.error("Failed to get access token")
-        return jsonify(error="Failed to authenticate with Microsoft Graph API"), 500
-    
+        return jsonify(error="Failed to authenticate with Microsoft Graph API."), 500
+
     result = get_room_calendar(room_email, access_token)
     logger.info(
         "Returning %s events (raw %s) for %s; filtered past entries: %s",
@@ -699,10 +776,8 @@ def get_room_calendar_api(room_id):
 
 
 @app.route('/api/test-graph-api')
+@debug_only
 def test_graph_api():
-    if not GRAPH_DEBUG_ENABLED:
-        abort(404)
-    
     """Debug endpoint to test Graph API connection and permissions"""
     results = {
         'tenant_id': TENANT_ID,
@@ -719,13 +794,13 @@ def test_graph_api():
         ],
         'admin_consent_granted': 'Please verify in Azure Portal'
     }
-    
+
     # Test getting access token
     access_token = get_access_token()
     if access_token:
         results['token_test'] = 'SUCCESS'
         results['token_length'] = len(access_token)
-        
+
         # Test each room
         for room_id, room_email in MEETING_ROOMS.items():
             logger.info(f"Testing access to {room_id}: {room_email}")
@@ -742,36 +817,34 @@ def test_graph_api():
     else:
         results['token_test'] = 'FAILED'
         results['error'] = 'Could not obtain access token'
-    
+
     return jsonify(results)
 
 
 @app.route('/api/token-claims')
+@debug_only
 def check_token_claims():
-    if not GRAPH_DEBUG_ENABLED:
-        abort(404)
-    
     """Decode the access token to see what permissions it contains"""
     import base64
     import json
-    
+
     access_token = get_access_token()
     if not access_token:
         return jsonify(error="Could not get token"), 500
-    
+
     try:
         # JWT tokens have 3 parts separated by dots
         parts = access_token.split('.')
         if len(parts) != 3:
             return jsonify(error="Invalid token format"), 500
-        
+
         # Decode the payload (second part)
         # Add padding if needed
         payload = parts[1]
         payload += '=' * (4 - len(payload) % 4)
         decoded = base64.urlsafe_b64decode(payload)
         claims = json.loads(decoded)
-        
+
         return jsonify({
             'roles': claims.get('roles', []),
             'scopes': claims.get('scp', 'None'),
@@ -780,39 +853,39 @@ def check_token_claims():
             'all_claims': claims
         })
     except Exception as e:
-        return jsonify(error=f"Error decoding token: {str(e)}"), 500
-    
+        logger.error(f"Error decoding token: {str(e)}", exc_info=True)
+        return jsonify(error=f"Error decoding token"), 500
+
 
 @app.route('/api/force-token-refresh')
+@debug_only
 def force_token_refresh():
-    if not GRAPH_DEBUG_ENABLED:
-        abort(404)
-    
     """Force refresh the token and check permissions"""
     import time
-    
+
     # Get a fresh token
     access_token = get_access_token()
-    
+
     if not access_token:
         return jsonify(error="Could not get token"), 500
-    
+
     # Decode it to check permissions
     import base64
     import json
-    
+
     parts = access_token.split('.')
     payload = parts[1]
     payload += '=' * (4 - len(payload) % 4)
     decoded = base64.urlsafe_b64decode(payload)
     claims = json.loads(decoded)
-    
+
     return jsonify({
         'timestamp': time.time(),
         'roles': claims.get('roles', []),
         'status': 'SUCCESS' if claims.get('roles') else 'NO PERMISSIONS YET',
         'message': 'If roles is still empty, wait 5-10 minutes after granting admin consent'
     })
+
 
 def periodic_update():
     """Schedule periodic updates of the news data"""
@@ -837,7 +910,7 @@ def initialize_app():
     try:
         # First add a dummy news item to ensure the site works
         news_manager.add_dummy_news()
-        
+
         # Then try to scrape real news
         news_manager.scrape_in_progress = True
         scrape_with_crochet(news_manager.news)
@@ -847,11 +920,40 @@ def initialize_app():
 
 
 if __name__ == '__main__':
+    if not SECRET_KEY:
+        logger.critical("=" * 50)
+        logger.critical("FATAL: FLASK_SECRET_KEY is not set.")
+        logger.critical("The application cannot start securely.")
+        logger.critical("Please set this environment variable.")
+        logger.critical("Generate a key with: python -c 'import secrets; print(secrets.token_hex(32))'")
+        logger.critical("=" * 50)
+        exit(1)  # Exit with an error code
+
+    if GRAPH_DEBUG_ENABLED:
+        logger.warning("=" * 50)
+        logger.warning("WARNING: GRAPH_DEBUG_ENABLED is 'true'")
+        logger.warning("Sensitive debug endpoints are exposed.")
+        logger.warning("This is INSECURE and should NOT be used in production.")
+        logger.warning("=" * 50)
+
     # Initialize the app
     initialize_app()
-    
+
     # Start the periodic update timer
     threading.Timer(3600, periodic_update).start()  # update content every hour
-    
+
+    logger.info("Starting Flask app...")
+    if not GRAPH_DEBUG_ENABLED:
+        logger.info("=" * 50)
+        logger.info("RUNNING IN PRODUCTION MODE (debug=False)")
+        logger.info("Ensure you are using a WSGI server (like Gunicorn) and NOT 'app.run()'.")
+        logger.info("Example: gunicorn -w 4 -b 0.0.0.0:5000 your_app_filename:app")
+        logger.info("=" * 50)
+    else:
+        logger.warning("=" * 50)
+        logger.warning("RUNNING IN DEBUG MODE (debug=True)")
+        logger.warning("This is for development ONLY.")
+        logger.warning("=" * 50)
+
     # Run the Flask app
-    app.run('0.0.0.0', 5000, debug=True)  # Enable debug mode for better error reporting
+    app.run('0.0.0.0', 5000, debug=GRAPH_DEBUG_ENABLED)
