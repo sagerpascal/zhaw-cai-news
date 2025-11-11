@@ -340,6 +340,11 @@
         
         // Update time display every second
         setInterval(updateCurrentTime, 1000);
+        
+        // Reload the page every hour to ensure fresh data after server reboots
+        setInterval(() => {
+            window.location.reload();
+        }, 3600000); // 1 hour in milliseconds
     </script>
 </body>
 </html>

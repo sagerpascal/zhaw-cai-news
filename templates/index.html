@@ -537,6 +537,11 @@
                     .then(reg => console.log('Service worker registered'))
                     .catch(err => console.log('Service worker registration failed:', err));
             }
+            
+            // Reload the page every hour to ensure fresh data after server reboots
+            setInterval(() => {
+                window.location.reload();
+            }, 3600000); // 1 hour in milliseconds
         });
     </script>
 </body>
