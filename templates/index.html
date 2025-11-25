@@ -540,7 +540,18 @@
             
             // Reload the page every hour to ensure fresh data after server reboots
             setInterval(() => {
-                window.location.reload();
+                // Check if server is reachable before reloading
+                fetch(window.location.href, { method: 'HEAD', cache: 'no-store' })
+                    .then(response => {
+                        if (response.ok) {
+                            window.location.reload();
+                        } else {
+                            console.log('Server unreachable, skipping reload');
+                        }
+                    })
+                    .catch(err => {
+                        console.log('Network error, skipping reload', err);
+                    });
             }, 3600000); // 1 hour in milliseconds
         });
     </script>

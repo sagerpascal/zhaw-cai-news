@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zhaw-cai-news-v1';
+const CACHE_NAME = 'zhaw-cai-news-v2';
 const urlsToCache = [
   '/',
   '/static/css/style.css',
@@ -11,7 +11,10 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME)
       .then(cache => {
         console.log('Opened cache');
-        return cache.addAll(urlsToCache);
+        return cache.addAll(urlsToCache).catch(err => {
+            console.warn('Failed to cache all assets, falling back to root only', err);
+            return cache.add('/');
+        });
       })
   );
 });
@@ -41,7 +44,13 @@ self.addEventListener('fetch', event => {
 
             return response;
           }
-        );
+        ).catch(error => {
+            // Network request failed, try to serve offline fallback
+            if (event.request.mode === 'navigate') {
+                return caches.match('/');
+            }
+            throw error;
+        });
       })
   );
 });
