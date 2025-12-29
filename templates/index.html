@@ -388,7 +388,12 @@
         
         function loadNews(newsId) {
             fetch(`/next_news/${newsId}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     document.getElementById('news-title').textContent = data.title;
                     document.getElementById('news-datetime').textContent = data.datetime;
@@ -402,7 +407,11 @@
                     // Reset and restart the auto-scroll timer
                     resetAutoScroll();
                 })
-                .catch(error => console.error('Error loading news:', error));
+                .catch(error => {
+                    console.error('Error loading news:', error);
+                    // Keep showing current content and retry later
+                    resetAutoScroll();
+                });
         }
         
         function updateProgressBar() {
@@ -537,22 +546,6 @@
                     .then(reg => console.log('Service worker registered'))
                     .catch(err => console.log('Service worker registration failed:', err));
             }
-            
-            // Reload the page every hour to ensure fresh data after server reboots
-            setInterval(() => {
-                // Check if server is reachable before reloading
-                fetch(window.location.href, { method: 'HEAD', cache: 'no-store' })
-                    .then(response => {
-                        if (response.ok) {
-                            window.location.reload();
-                        } else {
-                            console.log('Server unreachable, skipping reload');
-                        }
-                    })
-                    .catch(err => {
-                        console.log('Network error, skipping reload', err);
-                    });
-            }, 3600000); // 1 hour in milliseconds
         });
     </script>
 </body>

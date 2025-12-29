@@ -318,8 +318,11 @@
                 })
                 .catch(error => {
                     console.error(`[${new Date().toLocaleTimeString()}] Error loading ${roomId}:`, error);
-                    document.getElementById(`${roomId}-timeline`).innerHTML = 
-                        '<div class="error">Failed to load calendar</div>';
+                    // Only show error if we are in loading state, otherwise keep showing cached data
+                    const timeline = document.getElementById(`${roomId}-timeline`);
+                    if (timeline.querySelector('.loading')) {
+                        timeline.innerHTML = '<div class="error">Failed to load calendar</div>';
+                    }
                 });
         }
         
@@ -340,11 +343,6 @@
         
         // Update time display every second
         setInterval(updateCurrentTime, 1000);
-        
-        // Reload the page every hour to ensure fresh data after server reboots
-        setInterval(() => {
-            window.location.reload();
-        }, 3600000); // 1 hour in milliseconds
     </script>
 </body>
 </html>
